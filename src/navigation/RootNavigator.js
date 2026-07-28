@@ -28,18 +28,25 @@ function TabNavigator() {
         sceneStyle: styles.scene,
       }}
     >
-      <Tab.Screen
-        name="Scanner"
-        component={ScannerScreen}
-        options={{
-          tabBarIcon: ({ color }) => <TabIcon mark="◎" color={color} />,
-        }}
-      />
+      {/*
+        Collection is first, and therefore the landing screen.
+        Opening straight into the Scanner meant every launch turned on the
+        camera and began billing Claude calls before the user had asked for
+        anything. Scanning is now a deliberate act, and the camera permission
+        prompt only appears when someone actually goes to scan.
+      */}
       <Tab.Screen
         name="Collection"
         component={CollectionScreen}
         options={{
           tabBarIcon: ({ color }) => <TabIcon mark="▦" color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Scanner"
+        component={ScannerScreen}
+        options={{
+          tabBarIcon: ({ color }) => <TabIcon mark="◎" color={color} />,
         }}
       />
     </Tab.Navigator>

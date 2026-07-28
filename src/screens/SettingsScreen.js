@@ -214,8 +214,8 @@ export function SettingsScreen({ navigation, route }) {
           ) : null}
 
           <Text style={styles.footnote}>
-            Scanning is a paid Claude API call and runs continuously while the Scanner tab is
-            open. Switch tabs to stop it.
+            Scanning is a paid Claude API call. It runs only while the Scanner tab is open, and
+            stops the moment you leave it.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

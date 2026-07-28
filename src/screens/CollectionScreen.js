@@ -100,9 +100,11 @@ export function CollectionScreen({ navigation }) {
           <EmptyState
             mark="◉"
             title="No records yet"
-            message="Scan a cover with the camera, or search Spotify to add one by hand."
-            actionLabel="Search for a record"
-            onAction={() => navigation.navigate('Search')}
+            message="Point the camera at a sleeve and Crate will identify it, or search Spotify to add one by hand."
+            actionLabel="Scan a cover"
+            onAction={() => navigation.navigate('Scanner')}
+            secondaryActionLabel="Search instead"
+            onSecondaryAction={() => navigation.navigate('Search')}
             style={styles.empty}
           />
         }
