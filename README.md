@@ -130,6 +130,63 @@ see `src/services/claude.js`.
 
 ---
 
+## Testing
+
+### 1. Does it bundle?
+
+```bash
+npx expo export --platform ios
+```
+
+Catches import errors, bad syntax, and missing dependencies across every module
+without needing a device. Fast, and worth running before any device test.
+
+### 2. Do the APIs work? (no device needed)
+
+```bash
+npm run smoke                      # credentials + request contracts
+npm run smoke -- ~/cover.jpg       # also test real cover recognition
+```
+
+This is the high-value check. It verifies your keys and — more importantly — that
+Claude accepts the exact request shape the scanner sends (`thinking: disabled` plus
+`output_config.effort` and `output_config.format` together, with a base64 image
+block). If that contract is wrong, scanning is completely broken, and this catches
+it in seconds rather than in front of a record shelf.
+
+It also tells you whether Spotify returns preview clips for *your* app, which
+determines if the Preview button will ever be usable (see the note above).
+
+Pass a photo of a real album cover to test recognition quality end to end.
+
+### 3. On a device (Expo Go)
+
+The camera, permission flow, and audio playback can only be verified on hardware.
+Worth walking through:
+
+| Check | What to look for |
+| --- | --- |
+| First launch | Camera permission prompt appears; denying shows the explainer, not a crash |
+| Scanning | Status chip reads "Scanning…"; point at a sleeve and a result card slides up |
+| Unrecognized | Point at a wall — after ~2 misses it says "Not recognized", keeps trying |
+| Add to collection | Card's Add button; record appears at the top of the Collection grid |
+| Duplicate scan | Re-scan the same record — button reads "In your collection", no error |
+| Tab switch | Leave Scanner mid-scan; scanning stops (no further API calls) and resumes on return |
+| Preview | Tap a track in the detail view; audio plays, tapping another switches cleanly |
+| Silent switch | Flip the ringer to silent — previews should still be audible |
+| Deep link | "Open in Spotify" opens the app if installed, else the web player |
+| Offline | Turn on airplane mode — errors surface as messages, nothing crashes |
+| Persistence | Force-quit and reopen; the collection is still there |
+
+### Known gaps
+
+There are no unit tests. The logic worth testing in isolation is thin — most of
+the app is either UI or an API call — and the smoke test covers the parts most
+likely to actually break. If this grows, `src/services/spotify.js` normalization
+and `src/storage/collection.js` are the natural first candidates.
+
+---
+
 ## Project layout
 
 ```
