@@ -1,0 +1,221 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { AlbumActions } from './AlbumActions';
+import { AlbumArt } from './AlbumArt';
+import { useCollection } from '../context/CollectionContext';
+import { getAlbumTracks } from '../services/spotify';
+import { colors, radius, spacing, type } from '../theme';
+
+/**
+ * The card that slides up over the camera when a cover is identified.
+ *
+ * Artist is the headline; album title sits underneath it. The tracklist is
+ * fetched lazily just to find a playable preview clip — the full list lives
+ * on the detail screen.
+ */
+export function ScanResultCard({ result, onDismiss, onOpenDetail }) {
+  const { album, identification } = result;
+  const collection = useCollection();
+
+  const [previewTrack, setPreviewTrack] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
+
+  const slide = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue: 1,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [slide, album?.id]);
+
+  // Spotify only returns preview URLs on the tracks endpoint, not on search
+  // results, so we fetch the tracklist and take the first clip we can play.
+  useEffect(() => {
+    if (!album?.id) return undefined;
+
+    let cancelled = false;
+    setPreviewTrack(null);
+
+    getAlbumTracks(album.id)
+      .then((tracks) => {
+        if (cancelled) return;
+        setPreviewTrack(tracks.find((track) => track.previewUrl) ?? tracks[0] ?? null);
+      })
+      .catch(() => {
+        // A missing preview is a degraded button, not an error worth surfacing here.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [album?.id]);
+
+  const isOwned = album ? collection.owns(album.id) : false;
+
+  const handleAdd = useCallback(async () => {
+    if (!album) return;
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      await collection.add(album, { source: 'scan' });
+    } catch (error) {
+      setAddError(error.message ?? 'Could not save this record.');
+    } finally {
+      setIsAdding(false);
+    }
+  }, [album, collection]);
+
+  const translateY = useMemo(
+    () => slide.interpolate({ inputRange: [0, 1], outputRange: [340, 0] }),
+    [slide],
+  );
+
+  const artist = album?.artist ?? identification.artist;
+  const title = album?.name ?? identification.album;
+  const year = album?.year || identification.year;
+
+  return (
+    <Animated.View style={[styles.card, { transform: [{ translateY }], opacity: slide }]}>
+      <Pressable
+        onPress={onDismiss}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss and keep scanning"
+        style={styles.handleTarget}
+        hitSlop={12}
+      >
+        <View style={styles.handle} />
+      </Pressable>
+
+      <View style={styles.header}>
+        <AlbumArt uri={album?.imageUrl} size={76} label={title} />
+        <View style={styles.headerText}>
+          <Text style={styles.artist} numberOfLines={2}>
+            {artist}
+          </Text>
+          <Text style={styles.album} numberOfLines={2}>
+            {title}
+          </Text>
+          {year ? <Text style={styles.year}>{year}</Text> : null}
+        </View>
+      </View>
+
+      {album ? (
+        <>
+          <AlbumActions
+            album={album}
+            previewTrack={previewTrack}
+            onAdd={handleAdd}
+            isOwned={isOwned}
+            isAdding={isAdding}
+          />
+          {addError ? <Text style={styles.error}>{addError}</Text> : null}
+
+          <Pressable
+            onPress={() => onOpenDetail(album)}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.detailLink, pressed && styles.pressed]}
+          >
+            <Text style={styles.detailLinkLabel}>View tracklist →</Text>
+          </Pressable>
+        </>
+      ) : (
+        <View style={styles.notOnSpotify}>
+          <Text style={styles.notOnSpotifyText}>
+            Recognized the cover, but this release isn&rsquo;t on Spotify — so there&rsquo;s no
+            artwork, preview, or tracklist to pull in.
+          </Text>
+        </View>
+      )}
+
+      <Pressable
+        onPress={onDismiss}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]}
+      >
+        <Text style={styles.dismissLabel}>Keep scanning</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  handleTarget: {
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+  },
+  header: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+    gap: 2,
+  },
+  artist: {
+    ...type.display,
+    fontSize: 26,
+  },
+  album: {
+    ...type.subtitle,
+  },
+  year: {
+    ...type.caption,
+    marginTop: spacing.xs,
+  },
+  detailLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  detailLinkLabel: {
+    ...type.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  notOnSpotify: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  notOnSpotifyText: {
+    ...type.body,
+    lineHeight: 21,
+  },
+  dismiss: {
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  dismissLabel: {
+    ...type.label,
+  },
+  error: {
+    ...type.caption,
+    color: colors.danger,
+    textAlign: 'center',
+  },
+  pressed: {
+    opacity: 0.6,
+  },
+});
