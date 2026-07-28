@@ -10,6 +10,7 @@ import { ScanResultCard } from '../components/ScanResultCard';
 import { ScanState, useAlbumScanner } from '../hooks/useAlbumScanner';
 import { useCredentials } from '../context/CredentialsContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
+import { httpsUrl, isSecureContext } from '../utils/secureContext';
 import { colors, radius, spacing, type } from '../theme';
 
 /**
@@ -61,6 +62,21 @@ export function ScannerScreen({ navigation }) {
     stopPreview();
     reset();
   }, [stopPreview, reset]);
+
+  // Over plain HTTP the browser refuses camera access outright. The page tries
+  // to upgrade itself to HTTPS on load, so reaching here means that failed —
+  // usually a custom domain whose certificate hasn't been issued yet.
+  if (!isSecureContext()) {
+    return (
+      <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
+        <EmptyState
+          mark="⚠"
+          title="Camera needs a secure connection"
+          message={`Browsers only allow camera access over HTTPS. This page was loaded over plain HTTP, so scanning can't start.\n\nTry ${httpsUrl()} — if that fails, the site's HTTPS certificate may still be pending.`}
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (!isConfigured) {
     return (

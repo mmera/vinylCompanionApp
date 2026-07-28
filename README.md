@@ -110,14 +110,46 @@ build time, so a stray `.env` during a build would publish your keys to a public
 fails rather than leaking. (This is not theoretical: it caught exactly that during
 development.)
 
-### Deployment notes
+### Which URL does it land on?
+
+A project site normally serves from `https://<user>.github.io/<repo>/`. Two things
+change that, and neither is controlled by this repo:
+
+- **A custom domain on your *user site*.** If the `<user>.github.io` repo has a custom
+  domain, GitHub serves *every* project site under it — so this app appears at
+  `https://<custom-domain>/vinylCompanionApp/`, and the `github.io` URL redirects there.
+  Removing it affects all your other project sites too.
+- **A custom domain on this repo.** Repo **Settings → Pages → Custom domain**. Clearing
+  that box restores the `github.io` URL for this project only.
+
+Either way the path stays `/vinylCompanionApp/`, so the build needs no change. If you
+point a domain at *this app alone* (so it serves from the root), rebuild with:
+
+```bash
+PAGES_BASE_PATH="" npm run build:web
+```
+
+`app.config.js` and `scripts/build-web.mjs` read that one variable for the bundle's
+asset URLs, the manifest `start_url`/`scope`, and the service worker scope.
+
+### HTTPS is required, not optional
+
+The camera only works in a secure context. `*.github.io` is always HTTPS; a **custom
+domain stays HTTP until its certificate is issued** and **Settings → Pages → Enforce
+HTTPS** is ticked. Until then the scanner cannot start.
+
+Two guards handle this:
+
+1. The page upgrades itself to HTTPS on load, before the bundle is fetched, so an
+   `http://` link doesn't produce a broken app. `localhost` and `*.local` are exempt.
+2. If it somehow still loads insecurely, the Scanner tab explains why instead of showing
+   a black camera.
+
+### Other deployment notes
 
 - **`public/.nojekyll` is load-bearing.** GitHub Pages runs Jekyll, which silently drops
   directories starting with `_` — and Expo puts the entire bundle in `_expo/`. Without
   that file the deployed site is a blank page.
-- **The base path is hardcoded** to `/vinylCompanionApp` in `app.json`
-  (`experiments.baseUrl`), `public/manifest.webmanifest`, and `scripts/build-web.mjs`.
-  If you rename the repo or use a custom domain, update all three.
 - **The service worker never caches API traffic.** It ignores cross-origin requests
   entirely, so Claude and Spotify calls — and the credentials in their headers — are
   never written to disk. It only caches the app shell.
@@ -295,5 +327,7 @@ Anything with vision and structured-output support will work.
 | Nothing gets recognized | Fill more of the frame with the sleeve, avoid glare, hold steady. |
 | Camera black in the iOS simulator | Expected. Use a physical device. |
 | Deployed site is blank | `.nojekyll` missing from the build, or Pages source isn't set to GitHub Actions. |
+| Site loads at an unexpected domain | A custom domain is set on this repo's Pages settings, or inherited from your `<user>.github.io` user site. See [Which URL does it land on?](#which-url-does-it-land-on). |
+| "Camera needs a secure connection" | Page loaded over HTTP. Tick **Settings → Pages → Enforce HTTPS** once the certificate is issued. |
 | Deploy fails on the audit step | A credential reached the bundle — check for a `.env` in CI. Working as intended. |
 | PWA won't install | Needs HTTPS, a reachable manifest, and a registered service worker. Check the browser console. |

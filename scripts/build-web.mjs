@@ -21,7 +21,19 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.resolve(root, process.argv[2] ?? 'dist');
 
-const BASE_URL = '/vinylCompanionApp';
+// Must match app.config.js, which uses the same variable for the bundle's
+// asset URLs. Keep the two in step or the page loads and the JS 404s.
+const DEFAULT_BASE_PATH = '/vinylCompanionApp';
+function resolveBasePath() {
+  const raw = process.env.PAGES_BASE_PATH;
+  if (raw === undefined) return DEFAULT_BASE_PATH;
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+const BASE_URL = resolveBasePath();
+// Directory form, always with a trailing slash: "/vinylCompanionApp/" or "/".
+const BASE_DIR = `${BASE_URL}/`;
 
 const tty = process.stdout.isTTY;
 const paint = (code, text) => (tty ? `\x1b[${code}m${text}\x1b[0m` : text);
@@ -51,15 +63,44 @@ const themeColorTag = html.includes('name="theme-color"')
   ? ''
   : '\n    <meta name="theme-color" content="#0F0F0F" />';
 
+/*
+ * Camera access needs a secure context, so the scanner is dead over plain
+ * HTTP — silently, with only a console error. GitHub Pages serves HTTPS on
+ * *.github.io always, but a custom domain stays HTTP until its certificate is
+ * issued and "Enforce HTTPS" is ticked, and any link to http:// keeps working
+ * afterwards.
+ *
+ * Upgrading in the page removes that whole class of confusion. It runs first
+ * in <head>, before the bundle loads, so there is no flash of a broken app.
+ * localhost is exempt — it counts as secure, and dev servers are HTTP.
+ */
+const HTTPS_UPGRADE = `
+    <script>
+      (function () {
+        var host = location.hostname;
+        var isLocal =
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === '[::1]' ||
+          host.endsWith('.local');
+        if (location.protocol === 'http:' && !isLocal) {
+          location.replace(
+            'https://' + location.host + location.pathname + location.search + location.hash
+          );
+        }
+      })();
+    </script>
+`;
+
 const HEAD_TAGS = `
-    <link rel="manifest" href="${BASE_URL}/manifest.webmanifest" />${themeColorTag}
+    <link rel="manifest" href="${BASE_DIR}manifest.webmanifest" />${themeColorTag}
     <meta name="color-scheme" content="dark" />
     <meta name="description" content="Identify album covers with your camera and keep track of the records you own." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Crate" />
-    <link rel="apple-touch-icon" href="${BASE_URL}/icons/icon-1024.png" />
+    <link rel="apple-touch-icon" href="${BASE_DIR}icons/icon-1024.png" />
 `;
 
 const SW_REGISTRATION = `
@@ -69,7 +110,7 @@ const SW_REGISTRATION = `
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
           navigator.serviceWorker
-            .register('${BASE_URL}/sw.js', { scope: '${BASE_URL}/' })
+            .register('${BASE_DIR}sw.js', { scope: '${BASE_DIR}' })
             .catch(function (error) {
               console.warn('Service worker registration failed:', error);
             });
@@ -81,14 +122,31 @@ const SW_REGISTRATION = `
 if (html.includes('manifest.webmanifest')) {
   warn('index.html already carries PWA tags — skipping injection.');
 } else {
-  if (!html.includes('</head>')) {
-    fail('index.html has no </head> to inject into.');
+  if (!html.includes('</head>') || !html.includes('<head>')) {
+    fail('index.html has no <head> to inject into.');
     process.exit(1);
   }
+  // The upgrade goes first so it runs before the bundle is even requested.
+  html = html.replace('<head>', `<head>${HTTPS_UPGRADE}`);
   html = html.replace('</head>', `${HEAD_TAGS}  </head>`);
   html = html.replace('</body>', `${SW_REGISTRATION}  </body>`);
   await writeFile(indexPath, html);
-  ok('injected manifest, theme-color, iOS meta tags, and SW registration');
+  ok(`injected HTTPS upgrade, manifest, iOS meta tags, and SW registration`);
+  ok(`base path: ${BASE_DIR}`);
+}
+
+// ── 1b. Rewrite the manifest for the active base path ───────────────────────
+// public/manifest.webmanifest is checked in with the default paths; rewrite
+// them so a different PAGES_BASE_PATH doesn't produce a manifest whose
+// start_url points somewhere that doesn't exist.
+const manifestPath = path.join(dist, 'manifest.webmanifest');
+if (existsSync(manifestPath)) {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  const updated = { ...manifest, start_url: BASE_DIR, scope: BASE_DIR, id: BASE_DIR };
+  if (JSON.stringify(updated) !== JSON.stringify(manifest)) {
+    await writeFile(manifestPath, `${JSON.stringify(updated, null, 2)}\n`);
+    ok(`manifest start_url/scope/id set to ${BASE_DIR}`);
+  }
 }
 
 // ── 2. Confirm the static assets Pages needs actually made it across ────────
