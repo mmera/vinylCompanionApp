@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AlbumArt } from '../components/AlbumArt';
 import { EmptyState } from '../components/EmptyState';
-import { hasSpotifyCredentials } from '../config/env';
+import { useCredentials } from '../context/CredentialsContext';
 import { searchAlbums } from '../services/spotify';
 import { useCollection } from '../context/CollectionContext';
 import { colors, radius, spacing, type } from '../theme';
@@ -29,6 +29,7 @@ export function SearchScreen({ navigation }) {
   const [addingId, setAddingId] = useState(null);
 
   const collection = useCollection();
+  const { hasSpotify } = useCredentials();
   // Guards against a slow early request overwriting a newer one's results.
   const requestIdRef = useRef(0);
 
@@ -127,13 +128,15 @@ export function SearchScreen({ navigation }) {
     [collection, navigation, handleAdd, addingId],
   );
 
-  if (!hasSpotifyCredentials) {
+  if (!hasSpotify) {
     return (
       <SafeAreaView style={styles.fill} edges={['top']}>
         <EmptyState
           mark="⚙"
           title="Spotify credentials missing"
-          message="Add EXPO_PUBLIC_SPOTIFY_CLIENT_ID and EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET to your .env file, then restart the dev server."
+          message="Add your Spotify client ID and secret to search the catalog. They stay on this device."
+          actionLabel="Open Settings"
+          onAction={() => navigation.navigate('Settings')}
         />
       </SafeAreaView>
     );

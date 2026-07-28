@@ -1,0 +1,27 @@
+{
+  "name": "Crate — vinyl companion",
+  "short_name": "Crate",
+  "description": "Identify album covers with your camera and keep track of the records you own.",
+  "start_url": "/vinylCompanionApp/",
+  "scope": "/vinylCompanionApp/",
+  "id": "/vinylCompanionApp/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F0F0F",
+  "theme_color": "#0F0F0F",
+  "categories": ["music", "utilities"],
+  "icons": [
+    {
+      "src": "icons/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

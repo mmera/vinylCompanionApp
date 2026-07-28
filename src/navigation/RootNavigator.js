@@ -6,6 +6,7 @@ import { AlbumDetailScreen } from '../screens/AlbumDetailScreen';
 import { CollectionScreen } from '../screens/CollectionScreen';
 import { ScannerScreen } from '../screens/ScannerScreen';
 import { SearchScreen } from '../screens/SearchScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { colors, spacing, type } from '../theme';
 
 const Tab = createBottomTabNavigator();
@@ -75,6 +76,11 @@ export function RootNavigator() {
         name="Search"
         component={SearchScreen}
         options={{ title: 'Add a record', presentation: 'modal', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: 'Settings', presentation: 'modal', headerShown: false }}
       />
     </Stack.Navigator>
   );

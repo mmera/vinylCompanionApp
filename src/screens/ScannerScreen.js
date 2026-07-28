@@ -8,7 +8,7 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { ScanResultCard } from '../components/ScanResultCard';
 import { ScanState, useAlbumScanner } from '../hooks/useAlbumScanner';
-import { hasClaudeCredentials, hasSpotifyCredentials, missingCredentials } from '../config/env';
+import { useCredentials } from '../context/CredentialsContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { colors, radius, spacing, type } from '../theme';
 
@@ -40,7 +40,7 @@ export function ScannerScreen({ navigation }) {
     }, [stopPreview]),
   );
 
-  const isConfigured = hasClaudeCredentials && hasSpotifyCredentials;
+  const { isConfigured, missing } = useCredentials();
   const scanningEnabled =
     isFocused && isCameraReady && isConfigured && permission?.granted === true;
 
@@ -68,9 +68,9 @@ export function ScannerScreen({ navigation }) {
         <EmptyState
           mark="⚙"
           title="Add your API keys"
-          message={`Crate needs credentials before it can scan. Add ${missingCredentials().join(
-            ' and ',
-          )} to your .env file, then restart the dev server.`}
+          message={`Crate needs your ${missing.join(' and ')} before it can scan. They stay on this device.`}
+          actionLabel="Open Settings"
+          onAction={() => navigation.navigate('Settings', { onboarding: true })}
         />
       </SafeAreaView>
     );

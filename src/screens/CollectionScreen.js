@@ -69,15 +69,26 @@ export function CollectionScreen({ navigation }) {
           <View style={styles.header}>
             <View style={styles.headerRow}>
               <Text style={styles.title}>Collection</Text>
-              <Pressable
-                onPress={() => navigation.navigate('Search')}
-                accessibilityRole="button"
-                accessibilityLabel="Add a record by searching"
-                hitSlop={12}
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                <Text style={styles.addLabel}>+ Add</Text>
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable
+                  onPress={() => navigation.navigate('Search')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add a record by searching"
+                  hitSlop={12}
+                  style={({ pressed }) => pressed && styles.pressed}
+                >
+                  <Text style={styles.addLabel}>+ Add</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => navigation.navigate('Settings')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Settings"
+                  hitSlop={12}
+                  style={({ pressed }) => pressed && styles.pressed}
+                >
+                  <Text style={styles.settingsMark}>⚙</Text>
+                </Pressable>
+              </View>
             </View>
             <Text style={styles.count}>
               {records.length} {records.length === 1 ? 'record' : 'records'}
@@ -135,10 +146,19 @@ const styles = StyleSheet.create({
   title: {
     ...type.display,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   addLabel: {
     ...type.body,
     color: colors.text,
     fontWeight: '600',
+  },
+  settingsMark: {
+    fontSize: 18,
+    color: colors.textSecondary,
   },
   count: {
     ...type.caption,

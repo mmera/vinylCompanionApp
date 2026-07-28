@@ -1,4 +1,4 @@
-import { CLAUDE_API_KEY, CLAUDE_MODEL, hasClaudeCredentials } from '../config/env';
+import { getClaudeModel, getCredentials, hasClaudeCredentials } from '../storage/credentials';
 
 /**
  * Vision-based album cover identification via the Claude Messages API.
@@ -7,7 +7,7 @@ import { CLAUDE_API_KEY, CLAUDE_MODEL, hasClaudeCredentials } from '../config/en
  * the SDK's credential chain statically imports `node:fs` / `node:path` to
  * resolve keys from disk, which Metro cannot bundle for React Native. We pass
  * the key explicitly, so that whole layer is dead weight here — one POST with
- * three headers is the honest shape of this call.
+ * a few headers is the honest shape of this call.
  *
  * The scanner runs this on a loop, so every request is tuned for latency:
  * thinking off, low effort, a tight token cap, and a downscaled frame. The
@@ -17,6 +17,23 @@ import { CLAUDE_API_KEY, CLAUDE_MODEL, hasClaudeCredentials } from '../config/en
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+/**
+ * The Messages API rejects cross-origin browser requests unless this opt-in
+ * header is present. It is only meaningful on web; sending it natively is
+ * harmless. The name is a warning about shipping a shared key to a browser —
+ * here each person supplies their own key, which never leaves their device.
+ */
+const BROWSER_ACCESS_HEADER = 'anthropic-dangerous-direct-browser-access';
+
+function requestHeaders(apiKey) {
+  return {
+    'x-api-key': apiKey,
+    'anthropic-version': ANTHROPIC_VERSION,
+    'content-type': 'application/json',
+    [BROWSER_ACCESS_HEADER]: 'true',
+  };
+}
 
 export class MissingKeyError extends Error {
   constructor(message) {
@@ -89,12 +106,14 @@ const SYSTEM_PROMPT = [
  * @returns {Promise<{identified: boolean, artist: string, album: string, year: string, confidence: string}>}
  */
 export async function identifyAlbumCover(base64Image, options = {}) {
-  if (!hasClaudeCredentials) {
-    throw new MissingKeyError('Claude API key is not configured.');
+  const { claudeApiKey } = getCredentials();
+  if (!hasClaudeCredentials()) {
+    throw new MissingKeyError('Add your Claude API key in Settings to start scanning.');
   }
+  const model = getClaudeModel();
 
   const body = {
-    model: CLAUDE_MODEL,
+    model,
     max_tokens: 256,
     // Recognition is a perception task, not a reasoning one — thinking would
     // only add latency to a loop that runs every couple of seconds.
@@ -122,11 +141,7 @@ export async function identifyAlbumCover(base64Image, options = {}) {
   try {
     response = await fetch(API_URL, {
       method: 'POST',
-      headers: {
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'content-type': 'application/json',
-      },
+      headers: requestHeaders(claudeApiKey),
       body: JSON.stringify(body),
       signal: options.signal,
     });
@@ -136,13 +151,44 @@ export async function identifyAlbumCover(base64Image, options = {}) {
   }
 
   if (!response.ok) {
-    throw await buildApiError(response);
+    throw await buildApiError(response, model);
   }
 
   return parseIdentification(await response.json());
 }
 
-async function buildApiError(response) {
+/**
+ * Cheap credential check for the Settings screen. Sends a one-token text
+ * request — no image, no schema — so it verifies the key and reachability
+ * (including browser CORS) without the cost of a real identification.
+ */
+export async function verifyClaudeCredentials() {
+  const { claudeApiKey } = getCredentials();
+  if (!claudeApiKey) throw new MissingKeyError('Enter a Claude API key first.');
+  const model = getClaudeModel();
+
+  let response;
+  try {
+    response = await fetch(API_URL, {
+      method: 'POST',
+      headers: requestHeaders(claudeApiKey),
+      body: JSON.stringify({
+        model,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    });
+  } catch {
+    throw new ClaudeError(
+      'Could not reach Claude. Check your connection — and if this is the web app, that your browser is not blocking the request.',
+    );
+  }
+
+  if (!response.ok) throw await buildApiError(response, model);
+  return { model };
+}
+
+async function buildApiError(response, model) {
   let detail = '';
   try {
     const body = await response.json();
@@ -154,12 +200,12 @@ async function buildApiError(response) {
   switch (response.status) {
     case 401:
     case 403:
-      return new ClaudeError(
-        'Claude rejected your API key. Check EXPO_PUBLIC_CLAUDE_API_KEY in .env.',
-        { status: response.status, retryable: false },
-      );
+      return new ClaudeError('Claude rejected your API key. Check it in Settings.', {
+        status: response.status,
+        retryable: false,
+      });
     case 404:
-      return new ClaudeError(`Model "${CLAUDE_MODEL}" is unavailable on your account.`, {
+      return new ClaudeError(`Model "${model}" is unavailable on your account.`, {
         status: 404,
         retryable: false,
       });

@@ -1,8 +1,8 @@
 import {
-  SPOTIFY_CLIENT_ID,
-  SPOTIFY_CLIENT_SECRET,
+  getCredentials,
   hasSpotifyCredentials,
-} from '../config/env';
+  subscribeToCredentials,
+} from '../storage/credentials';
 
 /**
  * Spotify Web API via the Client Credentials flow.
@@ -46,7 +46,8 @@ function base64Encode(input) {
 }
 
 async function fetchToken() {
-  const credentials = base64Encode(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`);
+  const { spotifyClientId, spotifyClientSecret } = getCredentials();
+  const credentials = base64Encode(`${spotifyClientId}:${spotifyClientSecret}`);
 
   let response;
   try {
@@ -59,13 +60,15 @@ async function fetchToken() {
       body: 'grant_type=client_credentials',
     });
   } catch {
-    throw new SpotifyError('Cannot reach Spotify. Check your connection.');
+    throw new SpotifyError(
+      'Cannot reach Spotify. Check your connection — and if this is the web app, that your browser is not blocking the request.',
+    );
   }
 
   if (!response.ok) {
     throw new SpotifyError(
       response.status === 400 || response.status === 401
-        ? 'Spotify rejected your credentials. Check the client ID and secret in .env.'
+        ? 'Spotify rejected your credentials. Check the client ID and secret in Settings.'
         : `Spotify auth failed (${response.status}).`,
       { status: response.status, retryable: response.status >= 500 },
     );
@@ -80,8 +83,8 @@ async function fetchToken() {
 }
 
 async function getAccessToken() {
-  if (!hasSpotifyCredentials) {
-    throw new SpotifyError('Spotify credentials are not configured.', { retryable: false });
+  if (!hasSpotifyCredentials()) {
+    throw new SpotifyError('Add your Spotify credentials in Settings.', { retryable: false });
   }
   if (cachedToken && cachedToken.expiresAt > Date.now()) {
     return cachedToken.value;
@@ -224,4 +227,22 @@ export async function getAlbumTracks(albumId) {
 export function resetSpotifyToken() {
   cachedToken = null;
   inFlightToken = null;
+}
+
+// Editing credentials in Settings must invalidate a token minted with the old
+// pair, otherwise the app keeps using stale auth until it expires an hour later.
+subscribeToCredentials(resetSpotifyToken);
+
+/**
+ * Credential check for the Settings screen: mints a token and runs one small
+ * search, which together verify the ID/secret pair and that the browser can
+ * actually reach Spotify (CORS included).
+ */
+export async function verifySpotifyCredentials() {
+  resetSpotifyToken();
+  const albums = await searchAlbums('Rumours Fleetwood Mac', { limit: 1 });
+  if (!albums.length) {
+    throw new SpotifyError('Authenticated, but search returned nothing.', { retryable: true });
+  }
+  return albums[0];
 }

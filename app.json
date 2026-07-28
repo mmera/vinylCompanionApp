@@ -26,7 +26,18 @@
       }
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "Crate",
+      "shortName": "Crate",
+      "themeColor": "#0F0F0F",
+      "backgroundColor": "#0F0F0F",
+      "display": "standalone",
+      "orientation": "portrait"
+    },
+    "experiments": {
+      "baseUrl": "/vinylCompanionApp"
     },
     "plugins": [
       [

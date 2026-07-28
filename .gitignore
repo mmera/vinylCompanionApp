@@ -42,3 +42,6 @@ yarn-error.*
 
 # local env files
 .env
+
+# web build output
+dist/
