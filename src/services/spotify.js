@@ -66,10 +66,11 @@ async function fetchToken() {
   }
 
   if (!response.ok) {
+    const detail = await readErrorMessage(response);
     throw new SpotifyError(
       response.status === 400 || response.status === 401
-        ? 'Spotify rejected your credentials. Check the client ID and secret in Settings.'
-        : `Spotify auth failed (${response.status}).`,
+        ? `Spotify rejected your credentials${detail ? ` — ${detail}` : ''}. Check the client ID and secret in Settings.`
+        : `Spotify auth failed (${response.status})${detail ? ` — ${detail}` : ''}.`,
       { status: response.status, retryable: response.status >= 500 },
     );
   }
@@ -102,6 +103,20 @@ async function getAccessToken() {
   return inFlightToken;
 }
 
+/**
+ * Spotify puts the useful part in the body: {"error":{"status":400,"message":"..."}}.
+ * Discarding it turns every failure into an unactionable status code, so pull it
+ * out and put it in the message.
+ */
+async function readErrorMessage(response) {
+  try {
+    const body = await response.json();
+    return body?.error?.message ?? body?.error_description ?? '';
+  } catch {
+    return '';
+  }
+}
+
 async function apiGet(path, { retryOnAuthFailure = true } = {}) {
   const token = await getAccessToken();
 
@@ -111,7 +126,9 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    throw new SpotifyError('Cannot reach Spotify. Check your connection.');
+    throw new SpotifyError(
+      'Cannot reach Spotify. Check your connection — and if this is the web app, that your browser is not blocking the request.',
+    );
   }
 
   // A token can be revoked server-side before our cached expiry; drop it and retry once.
@@ -125,10 +142,24 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
   }
 
   if (!response.ok) {
-    throw new SpotifyError(`Spotify request failed (${response.status}).`, {
-      status: response.status,
-      retryable: response.status >= 500,
-    });
+    const detail = await readErrorMessage(response);
+
+    // Spotify answers a malformed or empty bearer token with 400 rather than
+    // 401, so say what that actually means instead of echoing "400".
+    if (response.status === 400 && /bearer|token/i.test(detail)) {
+      cachedToken = null;
+      throw new SpotifyError(
+        `Spotify rejected the access token${detail ? ` — ${detail}` : ''}. Re-check the client ID and secret in Settings.`,
+        { status: 400, retryable: false },
+      );
+    }
+
+    throw new SpotifyError(
+      detail
+        ? `Spotify: ${detail} (${response.status})`
+        : `Spotify request failed (${response.status}).`,
+      { status: response.status, retryable: response.status >= 500 },
+    );
   }
 
   return response.json();

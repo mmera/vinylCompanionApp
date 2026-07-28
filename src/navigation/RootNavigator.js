@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -72,17 +72,44 @@ export function RootNavigator() {
         component={AlbumDetailScreen}
         options={{ title: 'Album', headerLargeTitle: false }}
       />
+      {/*
+        Both are modals, which on iOS you can swipe away — but on web there is
+        no swipe and a modal without a header is a dead end. Always show a
+        header with an explicit Done action.
+      */}
       <Stack.Screen
         name="Search"
         component={SearchScreen}
-        options={{ title: 'Add a record', presentation: 'modal', headerShown: false }}
+        options={({ navigation }) => ({
+          title: 'Add a record',
+          presentation: 'modal',
+          headerRight: () => <HeaderDone onPress={() => navigation.goBack()} />,
+        })}
       />
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: 'Settings', presentation: 'modal', headerShown: false }}
+        options={({ navigation }) => ({
+          title: 'Settings',
+          presentation: 'modal',
+          headerRight: () => <HeaderDone onPress={() => navigation.goBack()} />,
+        })}
       />
     </Stack.Navigator>
+  );
+}
+
+function HeaderDone({ onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Close"
+      hitSlop={12}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <Text style={styles.headerDone}>Done</Text>
+    </Pressable>
   );
 }
 
@@ -117,5 +144,14 @@ const styles = StyleSheet.create({
   },
   tabIconMark: {
     fontSize: 20,
+  },
+  headerDone: {
+    ...type.body,
+    color: colors.text,
+    fontWeight: '600',
+    paddingHorizontal: spacing.sm,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

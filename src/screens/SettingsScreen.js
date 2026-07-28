@@ -118,7 +118,7 @@ export function SettingsScreen({ navigation, route }) {
   }, [clear]);
 
   return (
-    <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.fill} edges={['bottom']}>
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

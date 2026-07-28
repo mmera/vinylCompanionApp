@@ -130,7 +130,7 @@ export function SearchScreen({ navigation }) {
 
   if (!hasSpotify) {
     return (
-      <SafeAreaView style={styles.fill} edges={['top']}>
+      <SafeAreaView style={styles.fill} edges={['bottom']}>
         <EmptyState
           mark="⚙"
           title="Spotify credentials missing"
@@ -143,7 +143,7 @@ export function SearchScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.fill} edges={['top']}>
+    <SafeAreaView style={styles.fill} edges={['bottom']}>
       <View style={styles.searchBar}>
         <TextInput
           value={query}

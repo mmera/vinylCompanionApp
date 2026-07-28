@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,8 +42,26 @@ export function ScannerScreen({ navigation }) {
   );
 
   const { isConfigured, missing } = useCredentials();
-  const scanningEnabled =
-    isFocused && isCameraReady && isConfigured && permission?.granted === true;
+
+  /*
+   * On web, do NOT gate the camera behind a separate permission request.
+   *
+   * expo-camera's web `requestCameraPermissionsAsync` calls `getUserMedia`
+   * and then immediately stops the tracks it was granted — so asking first
+   * and *then* mounting CameraView triggers two prompts back to back. Safari
+   * compounds this: it has no `navigator.permissions` entry for the camera
+   * (so the check always reports "undetermined") and it doesn't persist the
+   * grant for sites that aren't installed to the Home Screen.
+   *
+   * Mounting CameraView directly means exactly one getUserMedia call. A
+   * refusal surfaces through `onMountError` instead, which we handle below.
+   */
+  const usesNativePermissionFlow = Platform.OS !== 'web';
+  const [mountError, setMountError] = useState(null);
+
+  const permissionSettled = usesNativePermissionFlow ? permission?.granted === true : !mountError;
+
+  const scanningEnabled = isFocused && isCameraReady && isConfigured && permissionSettled;
 
   const { state, result, error, reset } = useAlbumScanner({
     cameraRef,
@@ -92,29 +110,51 @@ export function ScannerScreen({ navigation }) {
     );
   }
 
-  if (!permission) {
-    return (
-      <View style={[styles.fill, styles.centered]}>
-        <ActivityIndicator color={colors.text} />
-      </View>
-    );
+  // Native: ask explicitly, which is the expected iOS pattern and only ever
+  // produces one system prompt.
+  if (usesNativePermissionFlow) {
+    if (!permission) {
+      return (
+        <View style={[styles.fill, styles.centered]}>
+          <ActivityIndicator color={colors.text} />
+        </View>
+      );
+    }
+
+    if (!permission.granted) {
+      return (
+        <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
+          <EmptyState
+            mark="◉"
+            title="Camera access needed"
+            message="Crate identifies album covers straight from the camera. Nothing is recorded or stored — frames are analysed and discarded."
+            actionLabel={permission.canAskAgain ? 'Allow camera' : undefined}
+            onAction={permission.canAskAgain ? requestPermission : undefined}
+          />
+          {!permission.canAskAgain ? (
+            <Text style={styles.settingsHint}>
+              Enable camera access for Crate in your device Settings.
+            </Text>
+          ) : null}
+        </SafeAreaView>
+      );
+    }
   }
 
-  if (!permission.granted) {
+  // Web: we only learn the camera is unavailable when mounting fails.
+  if (mountError) {
     return (
       <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
         <EmptyState
           mark="◉"
-          title="Camera access needed"
-          message="Crate identifies album covers straight from the camera. Nothing is recorded or stored — frames are analysed and discarded."
-          actionLabel={permission.canAskAgain ? 'Allow camera' : undefined}
-          onAction={permission.canAskAgain ? requestPermission : undefined}
+          title="Camera unavailable"
+          message={`Crate couldn't start the camera. If you dismissed the permission prompt, allow camera access for this site and try again.\n\n${mountError}`}
+          actionLabel="Try again"
+          onAction={() => {
+            setMountError(null);
+            setIsCameraReady(false);
+          }}
         />
-        {!permission.canAskAgain ? (
-          <Text style={styles.settingsHint}>
-            Enable camera access for Crate in your device Settings.
-          </Text>
-        ) : null}
       </SafeAreaView>
     );
   }
@@ -130,8 +170,14 @@ export function ScannerScreen({ navigation }) {
           facing="back"
           mode="picture"
           animateShutter={false}
-          onCameraReady={() => setIsCameraReady(true)}
-          onMountError={() => setIsCameraReady(false)}
+          onCameraReady={() => {
+            setIsCameraReady(true);
+            setMountError(null);
+          }}
+          onMountError={(event) => {
+            setIsCameraReady(false);
+            setMountError(event?.message || 'The browser refused access to the camera.');
+          }}
         />
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.cameraPlaceholder]} />
