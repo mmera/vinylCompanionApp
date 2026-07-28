@@ -154,10 +154,12 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
       );
     }
 
+    // Include the request itself. A bare status code is unactionable, and the
+    // path is what pins down which parameter Spotify is objecting to.
     throw new SpotifyError(
       detail
-        ? `Spotify: ${detail} (${response.status})`
-        : `Spotify request failed (${response.status}).`,
+        ? `Spotify: ${detail} (${response.status})\nRequest: ${path}`
+        : `Spotify request failed (${response.status}).\nRequest: ${path}`,
       { status: response.status, retryable: response.status >= 500 },
     );
   }
@@ -207,17 +209,26 @@ function normalizeTrack(track) {
  * Free-text album search. Used both by manual search and to resolve a
  * Claude identification into real catalog metadata.
  */
+/**
+ * Free-text album search. Used both by manual search and to resolve a
+ * Claude identification into real catalog metadata.
+ *
+ * Note we deliberately do not send `limit`. Spotify was rejecting requests
+ * with "Invalid limit" despite a documented-valid value, and the parameter
+ * buys us nothing: Spotify's own default page size is 20, which is at least
+ * as many results as any caller here wants. Trimming client-side is free and
+ * removes a whole class of failure from the request.
+ */
 export async function searchAlbums(query, { limit = 20 } = {}) {
   const trimmed = query?.trim();
   if (!trimmed) return [];
 
-  const params = new URLSearchParams({
-    q: trimmed,
-    type: 'album',
-    limit: String(limit),
-  });
+  const params = new URLSearchParams({ q: trimmed, type: 'album' });
   const body = await apiGet(`/search?${params.toString()}`);
-  return (body.albums?.items ?? []).map(normalizeAlbum).filter(Boolean);
+
+  const albums = (body.albums?.items ?? []).map(normalizeAlbum).filter(Boolean);
+  const count = Number.isFinite(limit) && limit > 0 ? Math.trunc(limit) : albums.length;
+  return albums.slice(0, count);
 }
 
 /**
