@@ -8,8 +8,9 @@ Personal use only — no accounts, no backend, no analytics. Everything lives on
 
 - **Scanner** — a live camera view that analyses what it sees every ~1.8s and identifies
   the album cover. No shutter button.
-- **Collection** — records you own, stored locally, with cover art, full tracklists, and
-  30-second previews.
+- **Collection** — records you own, stored locally, with cover art and full tracklists.
+  Searchable and sortable by artist, album, or era once there's enough on the shelf to
+  need it. Records Spotify has never heard of can be added by hand.
 
 ---
 
@@ -57,7 +58,7 @@ reason a forgotten variable is an annoyance rather than a broken app.
 There is no "Sign in with Anthropic" for third-party apps; the API authenticates with a
 key. Since Crate is a static site with nowhere to hide one, each person supplies their
 own, stored only in their browser. It is asked for at the point of scanning, not on
-first launch — the collection, search, previews and Spotify links all work without it.
+first launch — the collection, search, manual entry and Spotify links all work without it.
 
 Get one at [platform.claude.com](https://platform.claude.com) → Settings → API keys. It
 needs credit: scanning is a paid call, and the scanner fires roughly every 1.8s while
@@ -248,9 +249,14 @@ your app.
 | Add to collection | Record appears at the top of the Collection grid |
 | Duplicate scan | Re-scan the same record — reads "In your collection", no error |
 | Tab switch | Leave Scanner mid-scan; scanning stops and resumes on return |
-| Preview | Tap a track; audio plays, tapping another switches cleanly |
-| Silent switch | Flip the ringer to silent — previews still audible |
-| Deep link | "Open in Spotify" opens the app if installed, else the web player |
+| Preview | Only shown when a track has a clip — on a post-2024 Spotify app, expect no preview controls at all |
+| Silent switch | Flip the ringer to silent — previews still audible (pre-cutoff apps only) |
+| Search the shelf | Past 12 records: search and sort appear; `fleet rum` finds *Rumours* |
+| Sort by artist | Sticky A–Z headers; **The** Beatles under B, not T |
+| Add by hand | Search something Spotify lacks → "Add by hand" → appears with a ✎ badge |
+| Edit a manual record | Open it, change the year, go back — the detail screen reflects the edit |
+| Remove | Confirm dialog appears **and the record actually goes** (this was a no-op on web) |
+| Deep link | "Open in Spotify" opens the app if installed, else the web player; absent on manual records |
 | Offline | Airplane mode — errors surface as messages, nothing crashes |
 | Persistence | Force-quit and reopen; collection and keys are still there |
 | Storage note | Settings shows the origin keys are bound to, and whether storage is persistent |
@@ -259,8 +265,10 @@ your app.
 ### Known gaps
 
 No unit tests. Most of the app is UI or an API call, and the smoke test covers what's
-most likely to break. If this grows, `src/services/spotify.js` normalization and
-`src/storage/collection.js` are the natural first candidates.
+most likely to break. If this grows, `src/utils/collectionView.js` is the obvious first
+candidate — it is already pure functions with no React or storage behind them, which is
+exactly the shape a test wants — followed by `src/services/spotify.js` normalization and
+`src/storage/collection.js`.
 
 ---
 
@@ -291,16 +299,41 @@ A single JSON array in device storage under `crate:collection:v1`, keyed by Spot
 ID. A provider holds it in memory so every screen reads one source of truth. Re-adding an
 album you already own is a no-op, not an error.
 
+**Finding things in it.** Past a dozen records the grid grows a search box and four sort
+modes; below that they'd be furniture, so they stay hidden. Sorting by Artist or Album
+groups the grid under sticky A–Z headers, by Year under decades. The ordering rules live in
+`src/utils/collectionView.js` as pure functions — worth knowing that they file records the
+way a shelf does: leading articles are ignored, so **The** Beatles sorts under B and **A**
+Tribe Called Quest under T, and accents are folded so "Björk" is reachable by typing
+`bjork`. Search terms are matched independently, so `fleet rum` finds *Rumours*.
+
+The grid is a `SectionList` whose items are *rows* of records rather than records —
+`SectionList` has no `numColumns`, and building the columns by hand is what keeps both
+sticky headers and virtualisation.
+
+### Records Spotify doesn't have
+
+Private pressings, bootlegs, most 7"s, and anything long out of print simply aren't in the
+catalog, and a shelf app that can only hold what a streaming service knows about isn't a
+record of your shelf. Those are added by hand: artist, title, optional year and notes.
+They're stored under a namespaced `manual:<uuid>` ID that can never collide with a Spotify
+album ID, so "is there a catalog entry behind this?" is answerable from the ID alone.
+
+They carry a ✎ badge on the grid — without one, a manual record's blank cover reads as
+artwork that failed to load — and, being ours rather than Spotify's, they're the only
+records that can be edited after the fact.
+
 ### Previews
 
 One app-wide `expo-audio` player is reused for every track, so starting a preview anywhere
 implicitly stops whatever was playing before.
 
-> **Heads up:** Spotify stopped returning `preview_url` for apps created after
-> **27 November 2024**. If your app is new, every track returns `null` and the Preview
-> button is disabled with a note explaining why. That's a Spotify platform change, not a
-> bug — "Open in Spotify" still works, and playback is fully implemented for any app that
-> does return clips.
+> **Spotify stopped returning `preview_url` for apps created after 27 November 2024.** If
+> your app is new — and it almost certainly is — every track returns `null` and there are
+> no previews to play, ever. Crate treats this as data rather than an error: preview
+> controls render only for tracks that actually have a clip, so a new app shows none of
+> them rather than a permanently disabled button beside an apology. Playback stays fully
+> implemented for anyone whose Spotify app predates the cutoff.
 
 ### Why `fetch` instead of `@anthropic-ai/sdk`
 
@@ -327,20 +360,27 @@ scripts/
   deploy-pages.yml            Build and deploy to GitHub Pages
 src/
   theme.js                    Colors, spacing, type scale
+  config/
+    spotifyConfig.js          PKCE client ID, endpoints, redirect URI
   services/
     claude.js                 Vision identification (Messages API, structured outputs)
-    spotify.js                Client Credentials auth, search, albums, tracks
+    spotify.js                Search, albums, tracks (user token, auto-refresh)
   storage/
     credentials.js            Runtime key store (device-local)
-    collection.js             Collection persistence
+    collection.js             Collection persistence, incl. manual records
+    spotifySession.js         Signed-in OAuth session
+  utils/
+    collectionView.js         Search / sort / group — pure, testable
+    confirm.js                Cross-platform confirm (RNW's Alert is a no-op)
   context/
     CredentialsContext.js     Credential state + startup hydration gate
     CollectionContext.js      In-memory collection state
+    SpotifyAuthContext.js     PKCE sign-in and session
     PreviewPlayerContext.js   Single shared audio player
   hooks/
     useAlbumScanner.js        The capture → identify → resolve loop
   components/                 Button, AlbumArt, AlbumTile, AlbumActions, ScanResultCard, EmptyState
-  screens/                    Scanner, Collection, Search, AlbumDetail, Settings
+  screens/                    Scanner, Collection, Search, AlbumDetail, ManualEntry, Settings
   navigation/
     RootNavigator.js          Bottom tabs + stack
 ```

@@ -19,17 +19,41 @@ export class StorageError extends Error {
 
 /**
  * @typedef {Object} CollectionRecord
- * @property {string} id            Spotify album ID — also the dedupe key.
+ * @property {string} id            Spotify album ID, or `manual:<uuid>` — also the dedupe key.
  * @property {string} name
  * @property {string} artist
  * @property {string} year
  * @property {string|null} imageUrl
  * @property {string|null} thumbnailUrl
- * @property {string} spotifyUri
- * @property {string} spotifyUrl
- * @property {number} addedAt        Epoch ms.
- * @property {'scan'|'search'} source
+ * @property {string|null} spotifyUri   Null for manual records.
+ * @property {string|null} spotifyUrl   Null for manual records.
+ * @property {string} [notes]           Manual records only.
+ * @property {number} addedAt           Epoch ms.
+ * @property {'scan'|'search'|'manual'} source
  */
+
+/**
+ * Records that exist only on the shelf, not in Spotify's catalog — private
+ * pressings, bootlegs, most 7"s, anything out of print. Their IDs are
+ * namespaced so they can never collide with a Spotify album ID, and so that
+ * "is this a real catalog entry?" is answerable from the ID alone.
+ */
+export const MANUAL_ID_PREFIX = 'manual:';
+
+export function isManualRecord(record) {
+  if (!record) return false;
+  return record.source === 'manual' || String(record.id ?? '').startsWith(MANUAL_ID_PREFIX);
+}
+
+function manualId() {
+  // randomUUID needs a secure context and isn't in every engine Crate runs on
+  // (older iOS Safari, Hermes), so fall back to something collision-proof
+  // enough for a single device's collection.
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${MANUAL_ID_PREFIX}${crypto.randomUUID()}`;
+  }
+  return `${MANUAL_ID_PREFIX}${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export async function loadCollection() {
   let raw;
@@ -90,6 +114,65 @@ export async function addToCollection(album, { source = 'scan' } = {}) {
   const next = [record, ...records];
   await persist(next);
   return { records: next, added: true };
+}
+
+/**
+ * Add a record by hand. Unlike `addToCollection` there is nothing to dedupe
+ * against — two different pressings of the same album are two records, and
+ * only the owner can say whether that is what they meant.
+ *
+ * @returns {Promise<{records: CollectionRecord[], record: CollectionRecord}>}
+ */
+export async function addManualRecord({ artist, name, year, notes } = {}) {
+  const record = {
+    id: manualId(),
+    ...normalizeManualFields({ artist, name, year, notes }),
+    imageUrl: null,
+    thumbnailUrl: null,
+    // Explicitly null rather than a derived URL: there is no catalog entry
+    // behind a manual record, so every "open in Spotify" affordance must be
+    // able to tell that it has nowhere to go.
+    spotifyUri: null,
+    spotifyUrl: null,
+    addedAt: Date.now(),
+    source: 'manual',
+  };
+
+  const next = [record, ...(await loadCollection())];
+  await persist(next);
+  return { records: next, record };
+}
+
+function normalizeManualFields({ artist, name, year, notes }) {
+  const cleanArtist = (artist ?? '').trim();
+  const cleanName = (name ?? '').trim();
+
+  if (!cleanArtist || !cleanName) {
+    throw new StorageError('A record needs both an artist and an album title.');
+  }
+
+  return {
+    artist: cleanArtist,
+    name: cleanName,
+    year: (year ?? '').trim(),
+    notes: (notes ?? '').trim(),
+  };
+}
+
+/** Edit a manual record. Catalog records are owned by Spotify, not by us. */
+export async function updateManualRecord(recordId, fields) {
+  const records = await loadCollection();
+  const existing = records.find((record) => record.id === recordId);
+
+  if (!existing) throw new StorageError('That record is no longer in your collection.');
+  if (!isManualRecord(existing)) {
+    throw new StorageError('Only records added by hand can be edited.');
+  }
+
+  const updated = { ...existing, ...normalizeManualFields(fields) };
+  const next = records.map((record) => (record.id === recordId ? updated : record));
+  await persist(next);
+  return { records: next, record: updated };
 }
 
 export async function removeFromCollection(albumId) {

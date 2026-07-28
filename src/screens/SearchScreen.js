@@ -131,12 +131,18 @@ export function SearchScreen({ navigation }) {
   if (!spotify.isSignedIn) {
     return (
       <SafeAreaView style={styles.fill} edges={['bottom']}>
+        {/*
+          Manual entry needs no Spotify account, so this state offers it too —
+          otherwise the only way to add a record is behind a sign-in.
+        */}
         <EmptyState
           mark="♫"
           title="Connect Spotify"
-          message="Sign in with your Spotify account to search the catalog and pull in cover art and tracklists."
+          message="Sign in with your Spotify account to search the catalog and pull in cover art and tracklists. You can add records by hand without it."
           actionLabel={spotify.isConfigured ? 'Log in with Spotify' : undefined}
           onAction={spotify.isConfigured ? spotify.signIn : undefined}
+          secondaryActionLabel="Add a record by hand"
+          onSecondaryAction={() => navigation.replace('ManualEntry')}
         />
       </SafeAreaView>
     );
@@ -173,17 +179,36 @@ export function SearchScreen({ navigation }) {
             <EmptyState
               mark="○"
               title="Nothing found"
-              message={`No albums matched "${query.trim()}". Try the artist name as well as the title.`}
+              message={`No albums matched “${query.trim()}”. Try the artist name as well as the title — or, if it's a private pressing or out of print, add it by hand.`}
+              actionLabel="Add by hand"
+              onAction={() => navigation.replace('ManualEntry', { name: query.trim() })}
             />
           ) : (
             <EmptyState
               mark="⌕"
               title="Find a record"
               message="Search Spotify's catalog and tap + to add it straight to your collection."
+              actionLabel="Add a record by hand"
+              onAction={() => navigation.replace('ManualEntry')}
             />
           )
         }
       />
+
+      {/*
+        Also reachable with results on screen: Spotify returning ten wrong
+        pressings is the common way a rare record "isn't there", and that state
+        never renders the empty view.
+      */}
+      {results.length > 0 ? (
+        <Pressable
+          onPress={() => navigation.replace('ManualEntry', { name: query.trim() })}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.manualLink, pressed && styles.pressed]}
+        >
+          <Text style={styles.manualLinkLabel}>Not the right record? Add it by hand</Text>
+        </Pressable>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -270,6 +295,18 @@ const styles = StyleSheet.create({
     color: colors.danger,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
+  },
+  manualLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  manualLinkLabel: {
+    ...type.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   pressed: {
     opacity: 0.5,

@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import {
+  addManualRecord,
   addToCollection,
   loadCollection,
   removeFromCollection,
+  updateManualRecord,
 } from '../storage/collection';
 
 /**
@@ -39,6 +41,18 @@ export function CollectionProvider({ children }) {
     return added;
   }, []);
 
+  const addManual = useCallback(async (fields) => {
+    const { records: next, record } = await addManualRecord(fields);
+    setRecords(next);
+    return record;
+  }, []);
+
+  const updateManual = useCallback(async (recordId, fields) => {
+    const { records: next, record } = await updateManualRecord(recordId, fields);
+    setRecords(next);
+    return record;
+  }, []);
+
   const remove = useCallback(async (albumId) => {
     setRecords(await removeFromCollection(albumId));
   }, []);
@@ -52,11 +66,13 @@ export function CollectionProvider({ children }) {
       isLoading,
       error,
       add,
+      addManual,
+      updateManual,
       remove,
       refresh,
       owns: (albumId) => ownedIds.has(albumId),
     }),
-    [records, ownedIds, isLoading, error, add, remove, refresh],
+    [records, ownedIds, isLoading, error, add, addManual, updateManual, remove, refresh],
   );
 
   return <CollectionContext.Provider value={value}>{children}</CollectionContext.Provider>;

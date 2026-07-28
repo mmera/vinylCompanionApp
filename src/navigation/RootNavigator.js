@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AlbumDetailScreen } from '../screens/AlbumDetailScreen';
 import { CollectionScreen } from '../screens/CollectionScreen';
+import { ManualEntryScreen } from '../screens/ManualEntryScreen';
 import { ScannerScreen } from '../screens/ScannerScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -89,6 +90,15 @@ export function RootNavigator() {
         component={SearchScreen}
         options={({ navigation }) => ({
           title: 'Add a record',
+          presentation: 'modal',
+          headerRight: () => <HeaderDone onPress={() => navigation.goBack()} />,
+        })}
+      />
+      <Stack.Screen
+        name="ManualEntry"
+        component={ManualEntryScreen}
+        options={({ navigation, route }) => ({
+          title: route.params?.record ? 'Edit record' : 'Add by hand',
           presentation: 'modal',
           headerRight: () => <HeaderDone onPress={() => navigation.goBack()} />,
         })}

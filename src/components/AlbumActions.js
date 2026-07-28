@@ -6,8 +6,14 @@ import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { colors, spacing, type } from '../theme';
 
 /**
- * The three actions that follow an album everywhere it appears:
- * preview a track, open it in Spotify, add it to the collection.
+ * The actions that follow an album everywhere it appears.
+ *
+ * Each one renders only when it can actually do something. Previews in
+ * particular: Spotify stopped returning `preview_url` to apps registered after
+ * 2024-11-27, so for most installs there is no clip for any track, ever — and a
+ * permanently disabled button next to an apology is worse than no button. The
+ * test is per-album rather than global so that anyone whose Spotify app
+ * predates the cutoff still gets working previews.
  */
 export function AlbumActions({ album, previewTrack, onAdd, isOwned, isAdding }) {
   const player = usePreviewPlayer();
@@ -25,12 +31,16 @@ export function AlbumActions({ album, previewTrack, onAdd, isOwned, isAdding }) 
     // Try the app first, then fall back to the web player. `canOpenURL` needs
     // the scheme declared in app.json, which Expo Go can't do — so we just
     // attempt the deep link and catch the failure.
-    try {
-      await Linking.openURL(album.spotifyUri);
-      return;
-    } catch {
-      // Spotify app isn't installed or the scheme is unavailable.
+    if (album.spotifyUri) {
+      try {
+        await Linking.openURL(album.spotifyUri);
+        return;
+      } catch {
+        // Spotify app isn't installed or the scheme is unavailable.
+      }
     }
+
+    if (!album.spotifyUrl) return;
 
     try {
       await Linking.openURL(album.spotifyUrl);
@@ -50,28 +60,22 @@ export function AlbumActions({ album, previewTrack, onAdd, isOwned, isAdding }) 
 
   return (
     <View style={styles.container}>
-      <Button
-        label={
-          isThisBuffering
-            ? 'Loading…'
-            : isThisPlaying
-              ? 'Pause preview'
-              : 'Preview on Spotify'
-        }
-        icon={isThisPlaying ? '❚❚' : '▶'}
-        variant="primary"
-        onPress={handlePreview}
-        disabled={!previewUrl}
-        loading={isThisBuffering}
-      />
-
-      {!previewUrl ? (
-        <Text style={styles.note}>
-          Spotify doesn&rsquo;t expose a preview clip for this release.
-        </Text>
+      {previewUrl ? (
+        <Button
+          label={
+            isThisBuffering ? 'Loading…' : isThisPlaying ? 'Pause preview' : 'Preview on Spotify'
+          }
+          icon={isThisPlaying ? '❚❚' : '▶'}
+          variant="primary"
+          onPress={handlePreview}
+          loading={isThisBuffering}
+        />
       ) : null}
 
-      <Button label="Open in Spotify" variant="spotify" onPress={openInSpotify} />
+      {/* A manual record has no catalog entry, so there is nowhere to open. */}
+      {album?.spotifyUrl || album?.spotifyUri ? (
+        <Button label="Open in Spotify" variant="spotify" onPress={openInSpotify} />
+      ) : null}
 
       {onAdd ? (
         <Button
@@ -95,11 +99,6 @@ export function AlbumActions({ album, previewTrack, onAdd, isOwned, isAdding }) 
 const styles = StyleSheet.create({
   container: {
     gap: spacing.sm,
-  },
-  note: {
-    ...type.caption,
-    textAlign: 'center',
-    marginTop: -spacing.xs,
   },
   error: {
     ...type.caption,

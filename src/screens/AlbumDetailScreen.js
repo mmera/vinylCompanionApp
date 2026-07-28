@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,8 +13,10 @@ import { AlbumActions } from '../components/AlbumActions';
 import { AlbumArt } from '../components/AlbumArt';
 import { Button } from '../components/Button';
 import { getAlbum } from '../services/spotify';
+import { isManualRecord } from '../storage/collection';
 import { useCollection } from '../context/CollectionContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
+import { confirmDestructive } from '../utils/confirm';
 import { colors, radius, spacing, type } from '../theme';
 
 /**
@@ -28,9 +29,13 @@ export function AlbumDetailScreen({ route, navigation }) {
   const { albumId, album: seedAlbum } = route.params;
   const { width } = useWindowDimensions();
 
-  const [album, setAlbum] = useState(seedAlbum ?? null);
+  // A manual record is the whole truth about itself — there is no catalog
+  // entry to fetch, so the screen renders from what it was handed.
+  const isManual = isManualRecord(seedAlbum) || String(albumId ?? '').startsWith('manual:');
+
+  const [fetchedAlbum, setFetchedAlbum] = useState(seedAlbum ?? null);
   const [tracks, setTracks] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!isManual);
   const [error, setError] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
 
@@ -39,21 +44,34 @@ export function AlbumDetailScreen({ route, navigation }) {
   // tick, which would re-subscribe the navigation listener continuously.
   const { stop: stopPreview } = usePreviewPlayer();
 
+  /**
+   * A manual record is editable from this screen, so it has to be read from
+   * the collection rather than held in local state — otherwise returning from
+   * the editor redisplays the values the screen was opened with. Catalog
+   * albums are immutable and come from the fetch.
+   */
+  const storedRecord = useMemo(
+    () => collection.records.find((record) => record.id === albumId) ?? null,
+    [collection.records, albumId],
+  );
+  const album = isManual ? (storedRecord ?? seedAlbum ?? null) : fetchedAlbum;
+
   const artSize = Math.min(width - spacing.lg * 2, 340);
 
   const load = useCallback(async () => {
+    if (isManual) return;
     setIsLoading(true);
     setError(null);
     try {
       const full = await getAlbum(albumId);
-      setAlbum(full);
+      setFetchedAlbum(full);
       setTracks(full.tracks ?? []);
     } catch (loadError) {
       setError(loadError.message ?? 'Could not load this album.');
     } finally {
       setIsLoading(false);
     }
-  }, [albumId]);
+  }, [albumId, isManual]);
 
   useEffect(() => {
     load();
@@ -83,30 +101,32 @@ export function AlbumDetailScreen({ route, navigation }) {
     }
   }, [album, collection]);
 
-  const handleRemove = useCallback(() => {
-    Alert.alert('Remove from collection?', `${album?.name} will be removed from Crate.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            stopPreview();
-            await collection.remove(album.id);
-            navigation.goBack();
-          } catch (removeError) {
-            setError(removeError.message ?? 'Could not remove this record.');
-          }
-        },
-      },
-    ]);
+  const handleRemove = useCallback(async () => {
+    const confirmed = await confirmDestructive({
+      title: 'Remove from collection?',
+      message: `${album?.name} will be removed from Crate.`,
+      confirmLabel: 'Remove',
+    });
+    if (!confirmed) return;
+
+    try {
+      stopPreview();
+      await collection.remove(album.id);
+      navigation.goBack();
+    } catch (removeError) {
+      setError(removeError.message ?? 'Could not remove this record.');
+    }
   }, [album, collection, navigation, stopPreview]);
 
-  // The header's Preview button plays the first track that has a clip.
-  const headerTrack = useMemo(
-    () => tracks.find((track) => track.previewUrl) ?? tracks[0] ?? null,
-    [tracks],
-  );
+  // Only ever a track that actually has a clip — `AlbumActions` renders the
+  // preview button on the strength of this being non-null.
+  const headerTrack = useMemo(() => tracks.find((track) => track.previewUrl) ?? null, [tracks]);
+
+  // Spotify serves previews to apps registered before 2024-11-27 and to no one
+  // since, so this is all-or-nothing per album in practice. When it's nothing,
+  // the tracklist drops its play affordances rather than showing a column of
+  // dead rows.
+  const hasPreviews = useMemo(() => tracks.some((track) => track.previewUrl), [tracks]);
 
   if (!album && isLoading) {
     return (
@@ -117,10 +137,19 @@ export function AlbumDetailScreen({ route, navigation }) {
   }
 
   if (!album) {
+    // Retrying only means something for a catalog album — there is no remote
+    // copy of a manual record to fetch again, so offer a way out instead of a
+    // button that does nothing.
     return (
       <View style={[styles.fill, styles.centered, styles.padded]}>
-        <Text style={styles.errorTitle}>{error ?? 'Album unavailable.'}</Text>
-        <Button label="Try again" onPress={load} style={styles.retry} />
+        <Text style={styles.errorTitle}>
+          {isManual ? 'This record is no longer in your collection.' : (error ?? 'Album unavailable.')}
+        </Text>
+        <Button
+          label={isManual ? 'Back to collection' : 'Try again'}
+          onPress={isManual ? navigation.goBack : load}
+          style={styles.retry}
+        />
       </View>
     );
   }
@@ -133,7 +162,11 @@ export function AlbumDetailScreen({ route, navigation }) {
           <Text style={styles.artist}>{album.artist}</Text>
           <Text style={styles.album}>{album.name}</Text>
           <Text style={styles.meta}>
-            {[album.year, album.totalTracks ? `${album.totalTracks} tracks` : null]
+            {[
+              album.year,
+              album.totalTracks ? `${album.totalTracks} tracks` : null,
+              isManual ? 'Added by hand' : null,
+            ]
               .filter(Boolean)
               .join(' · ')}
           </Text>
@@ -148,26 +181,44 @@ export function AlbumDetailScreen({ route, navigation }) {
         isAdding={isAdding}
       />
 
-      <View style={styles.tracklist}>
-        <Text style={styles.sectionLabel}>Tracklist</Text>
+      {isManual ? (
+        <View style={styles.manualBlock}>
+          <Text style={styles.sectionLabel}>Your notes</Text>
+          <Text style={album.notes ? styles.notes : styles.notesEmpty}>
+            {album.notes || 'No notes on this record.'}
+          </Text>
+          <Text style={styles.manualNote}>
+            This record isn&rsquo;t in Spotify&rsquo;s catalog, so there&rsquo;s no cover art or
+            tracklist to pull in.
+          </Text>
+          <Button
+            label="Edit details"
+            onPress={() => navigation.navigate('ManualEntry', { record: album })}
+          />
+        </View>
+      ) : (
+        <View style={styles.tracklist}>
+          <Text style={styles.sectionLabel}>Tracklist</Text>
 
-        {isLoading && tracks.length === 0 ? (
-          <ActivityIndicator color={colors.textTertiary} style={styles.tracksLoading} />
-        ) : error && tracks.length === 0 ? (
-          <View style={styles.tracksError}>
-            <Text style={styles.errorText}>{error}</Text>
-            <Button label="Retry" onPress={load} style={styles.retry} />
-          </View>
-        ) : (
-          tracks.map((track) => (
-            <TrackRow
-              key={track.id ?? `${track.discNumber}-${track.trackNumber}`}
-              track={track}
-              album={album}
-            />
-          ))
-        )}
-      </View>
+          {isLoading && tracks.length === 0 ? (
+            <ActivityIndicator color={colors.textTertiary} style={styles.tracksLoading} />
+          ) : error && tracks.length === 0 ? (
+            <View style={styles.tracksError}>
+              <Text style={styles.errorText}>{error}</Text>
+              <Button label="Retry" onPress={load} style={styles.retry} />
+            </View>
+          ) : (
+            tracks.map((track) => (
+              <TrackRow
+                key={track.id ?? `${track.discNumber}-${track.trackNumber}`}
+                track={track}
+                album={album}
+                previewable={hasPreviews}
+              />
+            ))
+          )}
+        </View>
+      )}
 
       {isOwned ? (
         <Pressable
@@ -182,10 +233,30 @@ export function AlbumDetailScreen({ route, navigation }) {
   );
 }
 
-function TrackRow({ track, album }) {
+/**
+ * `previewable` is the album-wide answer, not this track's. When no track has
+ * a clip the row is plain text at full contrast — nothing is broken, previews
+ * simply aren't part of this album. Only in the mixed case does a track
+ * without a clip get dimmed, where the dimming actually means something.
+ */
+function TrackRow({ track, album, previewable }) {
   const player = usePreviewPlayer();
   const isActive = player.isActive(track.id);
-  const playable = Boolean(track.previewUrl);
+  const playable = previewable && Boolean(track.previewUrl);
+
+  if (!previewable) {
+    return (
+      <View style={styles.track}>
+        <Text style={styles.trackNumber}>{track.trackNumber}</Text>
+        <View style={styles.trackText}>
+          <Text style={styles.trackName} numberOfLines={1}>
+            {track.name}
+          </Text>
+        </View>
+        <Text style={styles.trackDuration}>{formatDuration(track.durationMs)}</Text>
+      </View>
+    );
+  }
 
   return (
     <Pressable
@@ -267,6 +338,27 @@ const styles = StyleSheet.create({
   },
   tracklist: {
     gap: spacing.xs,
+  },
+  manualBlock: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  notes: {
+    ...type.body,
+    color: colors.text,
+    lineHeight: 21,
+  },
+  notesEmpty: {
+    ...type.body,
+    color: colors.textTertiary,
+  },
+  manualNote: {
+    ...type.caption,
+    lineHeight: 18,
   },
   sectionLabel: {
     ...type.label,
