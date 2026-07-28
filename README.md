@@ -13,23 +13,52 @@ Personal use only — no accounts, no backend, no analytics. Everything lives on
 
 ---
 
-## Credentials, and why there are none in this repo
+## Credentials
 
-Crate calls Claude and Spotify **directly from your device**. There is no server in
-between, which means there is nowhere to hide a shared API key.
+Crate asks a person for one thing: **their Claude API key**, and only when they go to
+scan. Everything else is either public or handled by signing in.
 
-So the app doesn't have one. On first launch it asks for your own keys, stores them in
-your browser's `localStorage` (or `AsyncStorage` on iOS), and never sends them anywhere
-except to Claude and Spotify. The deployed bundle contains no credentials at all — the
-build fails if it ever does (see [Deploying](#deploying-as-a-pwa)).
+### Spotify — sign in, nothing to type
 
-That's what makes it safe to host the PWA at a public URL. Anyone can visit it, but they
-bring their own keys and see their own collection.
+Spotify uses **Authorization Code + PKCE**, the flow designed for apps with no backend.
+The app carries a **public client ID** (an identifier, not a secret — it is meant to
+ship in the bundle) and there is no client secret anywhere. Users tap *Log in with
+Spotify* and authorise with their own account.
+
+No scopes are requested. Everything Crate reads — search, albums, tracks — is public
+catalog data; signing in exists to obtain a token, not to reach into anyone's account.
+
+**Setup, once, by you:**
+
+1. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
+2. Add the **exact** redirect URI for wherever you deploy, including the trailing slash:
+   `https://<user>.github.io/vinylCompanionApp/` (Settings shows the precise value the
+   running app will use — copy it from there if in doubt). For native, also add
+   `crate://spotify-auth`.
+3. Copy the **Client ID** into a repository *variable* named `SPOTIFY_CLIENT_ID`
+   (Settings → Secrets and variables → Actions → **Variables**, not Secrets — it isn't
+   one), and into `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` in your local `.env`.
+
+> **Development Mode caps you at 25 users.** New Spotify apps only allow 25 accounts,
+> each added by email in the dashboard. Going beyond that needs a **quota extension
+> request**, which Spotify reviews. If you intend to share this publicly, start that
+> request early — it is the long pole and it can be refused.
+
+### Claude — the user's own key
+
+There is no "Sign in with Anthropic" for third-party apps; the API authenticates with a
+key. Since Crate is a static site with nowhere to hide one, each person supplies their
+own, stored only in their browser. It is asked for at the point of scanning, not on
+first launch — the collection, search, previews and Spotify links all work without it.
+
+Get one at [platform.claude.com](https://platform.claude.com) → Settings → API keys. It
+needs credit: scanning is a paid call, and the scanner fires roughly every 1.8s while
+the Scanner tab is open.
 
 ### Keys are stored per origin
 
 Browser storage is scoped to the exact origin — scheme *and* host. These are three
-separate stores, and keys entered in one are invisible to the others:
+separate stores, and anything saved in one is invisible to the others:
 
 ```
 http://example.com/app/     ① different scheme
@@ -37,37 +66,14 @@ https://example.com/app/    ②
 https://user.github.io/app/ ③ different host
 ```
 
-So changing domain, or moving from HTTP to HTTPS, means entering the keys once more.
-That's browser behaviour, not the app forgetting them. Settings shows which origin the
+So changing domain, or moving from HTTP to HTTPS, means signing in and entering the key
+again. That's browser behaviour, not the app forgetting. Settings shows which origin the
 current keys belong to.
 
-Crate also calls `navigator.storage.persist()` at startup and again after you save, which
-asks the browser not to evict the store. Without it, iOS Safari clears script-writable
-storage after about a week without a visit, and Chromium may clear it under disk
-pressure. Adding Crate to your Home Screen makes the request far more likely to be
-granted — Settings tells you whether it was.
-
-### Getting a Claude API key
-
-1. Sign in at [platform.claude.com](https://platform.claude.com).
-2. **Settings → API keys → Create key**.
-3. Copy the key (starts with `sk-ant-`) into Crate's Settings screen.
-
-The key needs credit — scanning is a paid API call. Each scan sends one downscaled
-frame (~768px JPEG) and asks for a short JSON response, so per-scan cost is small, but
-the scanner fires continuously while the Scanner tab is open. Switch tabs to stop it.
-
-### Getting Spotify credentials
-
-1. Sign in at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
-2. **Create app**. Name and description can be anything.
-3. Redirect URI: `http://localhost:3000` — Crate uses the Client Credentials flow and
-   never redirects, but the form requires a value.
-4. Tick **Web API**, then save.
-5. Copy the **Client ID** and **Client secret** from the app's Settings into Crate.
-
-No Spotify login is needed — Client Credentials grants public catalog access (search,
-albums, tracks), which is all Crate reads.
+Crate also calls `navigator.storage.persist()` at startup and after you save, asking the
+browser not to evict the store. Without it, iOS Safari clears script-writable storage
+after about a week without a visit. Adding Crate to your Home Screen makes the request
+far more likely to be granted — Settings tells you whether it was.
 
 ---
 

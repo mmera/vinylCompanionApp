@@ -27,6 +27,11 @@ jobs:
       # build script refuses to publish a bundle containing credentials — this
       # makes the intent explicit for anyone reading the workflow.
       EXPO_NO_DOTENV: '1'
+      # Public by design: under PKCE the Spotify client ID is an identifier,
+      # not a secret, and it must ship in the bundle for sign-in to work.
+      # Set it as a repository *variable* (Settings -> Secrets and variables ->
+      # Actions -> Variables), not a secret.
+      EXPO_PUBLIC_SPOTIFY_CLIENT_ID: ${{ vars.SPOTIFY_CLIENT_ID }}
     steps:
       - name: Check out
         uses: actions/checkout@v4

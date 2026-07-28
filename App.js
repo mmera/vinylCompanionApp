@@ -1,13 +1,20 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { CollectionProvider } from './src/context/CollectionContext';
 import { CredentialsProvider, useCredentials } from './src/context/CredentialsContext';
 import { PreviewPlayerProvider } from './src/context/PreviewPlayerContext';
+import { SpotifyAuthProvider } from './src/context/SpotifyAuthContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors, navigationTheme } from './src/theme';
+
+// Closes the popup window that Spotify redirects back into on web. Must run
+// at module scope, before the app renders, or the popup never hands the code
+// back to the opener.
+WebBrowser.maybeCompleteAuthSession();
 
 /**
  * Credentials are read from device storage, so hold the UI until that load
@@ -37,11 +44,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <CredentialsProvider>
-        <CollectionProvider>
-          <PreviewPlayerProvider>
-            <Shell />
-          </PreviewPlayerProvider>
-        </CollectionProvider>
+        <SpotifyAuthProvider>
+          <CollectionProvider>
+            <PreviewPlayerProvider>
+              <Shell />
+            </PreviewPlayerProvider>
+          </CollectionProvider>
+        </SpotifyAuthProvider>
       </CredentialsProvider>
     </SafeAreaProvider>
   );

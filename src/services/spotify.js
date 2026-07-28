@@ -1,18 +1,26 @@
+import { refreshAsync } from 'expo-auth-session';
+
+import { SPOTIFY_CLIENT_ID, SPOTIFY_DISCOVERY } from '../config/spotifyConfig';
 import {
-  getCredentials,
-  hasSpotifyCredentials,
-  subscribeToCredentials,
-} from '../storage/credentials';
+  clearSpotifySession,
+  getSpotifySession,
+  isSignedIn,
+  needsRefresh,
+  saveSpotifySession,
+} from '../storage/spotifySession';
 
 /**
- * Spotify Web API via the Client Credentials flow.
+ * Spotify Web API using the signed-in user's token.
  *
- * No user login — this grants access to public catalog data only (search,
- * albums, tracks), which is all Crate needs. Tokens last an hour and are
- * cached in memory; concurrent callers share one in-flight token request.
+ * Crate previously used the Client Credentials flow, which meant asking each
+ * person for a client ID and secret — developer credentials no user should
+ * ever handle. Now they sign in with PKCE and we use the resulting token.
+ *
+ * Everything Crate reads (search, albums, tracks) is public catalog data, so
+ * the token carries no scopes; signing in exists to obtain a token, not to
+ * reach into anyone's account.
  */
 
-const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const API_BASE = 'https://api.spotify.com/v1';
 
 export class SpotifyError extends Error {
@@ -24,83 +32,58 @@ export class SpotifyError extends Error {
   }
 }
 
-let cachedToken = null; // { value: string, expiresAt: number }
-let inFlightToken = null;
-
-/** base64 without Buffer — React Native's Hermes has no Node globals. */
-function base64Encode(input) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let output = '';
-  for (let i = 0; i < input.length; i += 3) {
-    const a = input.charCodeAt(i);
-    const b = input.charCodeAt(i + 1);
-    const c = input.charCodeAt(i + 2);
-    const bitmap = (a << 16) | ((isNaN(b) ? 0 : b) << 8) | (isNaN(c) ? 0 : c);
-    output +=
-      alphabet[(bitmap >> 18) & 63] +
-      alphabet[(bitmap >> 12) & 63] +
-      (isNaN(b) ? '=' : alphabet[(bitmap >> 6) & 63]) +
-      (isNaN(c) ? '=' : alphabet[bitmap & 63]);
+/** Raised when the user needs to sign in (or sign in again). */
+export class SpotifyAuthRequiredError extends SpotifyError {
+  constructor(message = 'Sign in with Spotify to search the catalog.') {
+    super(message, { retryable: false });
+    this.name = 'SpotifyAuthRequiredError';
   }
-  return output;
 }
 
-async function fetchToken() {
-  const { spotifyClientId, spotifyClientSecret } = getCredentials();
-  const credentials = base64Encode(`${spotifyClientId}:${spotifyClientSecret}`);
+// Concurrent callers share one refresh rather than racing to mint tokens.
+let inFlightRefresh = null;
 
-  let response;
-  try {
-    response = await fetch(TOKEN_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials',
-    });
-  } catch {
-    throw new SpotifyError(
-      'Cannot reach Spotify. Check your connection — and if this is the web app, that your browser is not blocking the request.',
-    );
+async function refreshAccessToken() {
+  const session = getSpotifySession();
+  if (!session?.refreshToken) {
+    await clearSpotifySession();
+    throw new SpotifyAuthRequiredError('Your Spotify session expired. Sign in again.');
   }
 
-  if (!response.ok) {
-    const detail = await readErrorMessage(response);
-    throw new SpotifyError(
-      response.status === 400 || response.status === 401
-        ? `Spotify rejected your credentials${detail ? ` — ${detail}` : ''}. Check the client ID and secret in Settings.`
-        : `Spotify auth failed (${response.status})${detail ? ` — ${detail}` : ''}.`,
-      { status: response.status, retryable: response.status >= 500 },
-    );
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshAsync(
+      { clientId: SPOTIFY_CLIENT_ID, refreshToken: session.refreshToken },
+      SPOTIFY_DISCOVERY,
+    )
+      .then(async (token) => {
+        await saveSpotifySession({
+          accessToken: token.accessToken,
+          refreshToken: token.refreshToken,
+          expiresIn: token.expiresIn,
+          scope: token.scope,
+        });
+        return token.accessToken;
+      })
+      .catch(async (error) => {
+        // A rejected refresh token is terminal — drop the session so the UI
+        // can offer a fresh sign-in instead of retrying forever.
+        await clearSpotifySession();
+        throw new SpotifyAuthRequiredError(
+          `Your Spotify session could not be renewed${error?.message ? ` (${error.message})` : ''}. Sign in again.`,
+        );
+      })
+      .finally(() => {
+        inFlightRefresh = null;
+      });
   }
 
-  const body = await response.json();
-  return {
-    value: body.access_token,
-    // Refresh a minute early so a token never expires mid-request.
-    expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000 - 60_000,
-  };
+  return inFlightRefresh;
 }
 
 async function getAccessToken() {
-  if (!hasSpotifyCredentials()) {
-    throw new SpotifyError('Add your Spotify credentials in Settings.', { retryable: false });
-  }
-  if (cachedToken && cachedToken.expiresAt > Date.now()) {
-    return cachedToken.value;
-  }
-  if (!inFlightToken) {
-    inFlightToken = fetchToken()
-      .then((token) => {
-        cachedToken = token;
-        return token.value;
-      })
-      .finally(() => {
-        inFlightToken = null;
-      });
-  }
-  return inFlightToken;
+  if (!isSignedIn()) throw new SpotifyAuthRequiredError();
+  if (needsRefresh()) return refreshAccessToken();
+  return getSpotifySession().accessToken;
 }
 
 /**
@@ -131,9 +114,10 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
     );
   }
 
-  // A token can be revoked server-side before our cached expiry; drop it and retry once.
+  // A token can be revoked before our recorded expiry; force a refresh and
+  // retry once before giving up on the session.
   if (response.status === 401 && retryOnAuthFailure) {
-    cachedToken = null;
+    await refreshAccessToken();
     return apiGet(path, { retryOnAuthFailure: false });
   }
 
@@ -147,10 +131,8 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
     // Spotify answers a malformed or empty bearer token with 400 rather than
     // 401, so say what that actually means instead of echoing "400".
     if (response.status === 400 && /bearer|token/i.test(detail)) {
-      cachedToken = null;
-      throw new SpotifyError(
-        `Spotify rejected the access token${detail ? ` — ${detail}` : ''}. Re-check the client ID and secret in Settings.`,
-        { status: 400, retryable: false },
+      throw new SpotifyAuthRequiredError(
+        `Spotify rejected the access token${detail ? ` — ${detail}` : ''}. Sign in again.`,
       );
     }
 
@@ -208,10 +190,6 @@ function normalizeTrack(track) {
 /**
  * Free-text album search. Used both by manual search and to resolve a
  * Claude identification into real catalog metadata.
- */
-/**
- * Free-text album search. Used both by manual search and to resolve a
- * Claude identification into real catalog metadata.
  *
  * Note we deliberately do not send `limit`. Spotify was rejecting requests
  * with "Invalid limit" despite a documented-valid value, and the parameter
@@ -265,26 +243,15 @@ export async function getAlbumTracks(albumId) {
   return tracks;
 }
 
-/** Reset cached auth — used by tests and by the "retry" affordance on errors. */
-export function resetSpotifyToken() {
-  cachedToken = null;
-  inFlightToken = null;
-}
-
-// Editing credentials in Settings must invalidate a token minted with the old
-// pair, otherwise the app keeps using stale auth until it expires an hour later.
-subscribeToCredentials(resetSpotifyToken);
-
 /**
- * Credential check for the Settings screen: mints a token and runs one small
- * search, which together verify the ID/secret pair and that the browser can
- * actually reach Spotify (CORS included).
+ * Connection check for the Settings screen: runs one small search, which
+ * verifies the signed-in token works and that the browser can actually reach
+ * Spotify (CORS included).
  */
-export async function verifySpotifyCredentials() {
-  resetSpotifyToken();
+export async function verifySpotifyConnection() {
   const albums = await searchAlbums('Rumours Fleetwood Mac', { limit: 1 });
   if (!albums.length) {
-    throw new SpotifyError('Authenticated, but search returned nothing.', { retryable: true });
+    throw new SpotifyError('Signed in, but search returned nothing.', { retryable: true });
   }
   return albums[0];
 }

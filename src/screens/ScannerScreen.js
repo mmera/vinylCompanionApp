@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { ScanResultCard } from '../components/ScanResultCard';
 import { ScanState, useAlbumScanner } from '../hooks/useAlbumScanner';
 import { useCredentials } from '../context/CredentialsContext';
+import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { httpsUrl, isSecureContext } from '../utils/secureContext';
 import { colors, radius, spacing, type } from '../theme';
@@ -41,7 +42,9 @@ export function ScannerScreen({ navigation }) {
     }, [stopPreview]),
   );
 
-  const { isConfigured, missing } = useCredentials();
+  const { hasClaude } = useCredentials();
+  const spotify = useSpotifyAuth();
+  const isConfigured = hasClaude && spotify.isSignedIn;
 
   /*
    * On web, do NOT gate the camera behind a separate permission request.
@@ -102,7 +105,13 @@ export function ScannerScreen({ navigation }) {
         <EmptyState
           mark="⚙"
           title="Add your API keys"
-          message={`Crate needs your ${missing.join(' and ')} before it can scan. They stay on this device.`}
+          message={
+            !spotify.isSignedIn && !hasClaude
+              ? 'Scanning needs a Spotify sign-in and your Claude API key. Both are set up in Settings.'
+              : !spotify.isSignedIn
+                ? 'Sign in with Spotify so Crate can look up whatever it recognises.'
+                : 'Cover recognition uses Claude. Add your API key in Settings — it stays on this device.'
+          }
           actionLabel="Open Settings"
           onAction={() => navigation.navigate('Settings', { onboarding: true })}
         />

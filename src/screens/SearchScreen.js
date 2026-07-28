@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AlbumArt } from '../components/AlbumArt';
 import { EmptyState } from '../components/EmptyState';
-import { useCredentials } from '../context/CredentialsContext';
+import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { searchAlbums } from '../services/spotify';
 import { useCollection } from '../context/CollectionContext';
 import { colors, radius, spacing, type } from '../theme';
@@ -29,7 +29,7 @@ export function SearchScreen({ navigation }) {
   const [addingId, setAddingId] = useState(null);
 
   const collection = useCollection();
-  const { hasSpotify } = useCredentials();
+  const spotify = useSpotifyAuth();
   // Guards against a slow early request overwriting a newer one's results.
   const requestIdRef = useRef(0);
 
@@ -128,15 +128,15 @@ export function SearchScreen({ navigation }) {
     [collection, navigation, handleAdd, addingId],
   );
 
-  if (!hasSpotify) {
+  if (!spotify.isSignedIn) {
     return (
       <SafeAreaView style={styles.fill} edges={['bottom']}>
         <EmptyState
-          mark="⚙"
-          title="Spotify credentials missing"
-          message="Add your Spotify client ID and secret to search the catalog. They stay on this device."
-          actionLabel="Open Settings"
-          onAction={() => navigation.navigate('Settings')}
+          mark="♫"
+          title="Connect Spotify"
+          message="Sign in with your Spotify account to search the catalog and pull in cover art and tracklists."
+          actionLabel={spotify.isConfigured ? 'Log in with Spotify' : undefined}
+          onAction={spotify.isConfigured ? spotify.signIn : undefined}
         />
       </SafeAreaView>
     );

@@ -15,8 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
 import { useCredentials } from '../context/CredentialsContext';
+import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { verifyClaudeCredentials } from '../services/claude';
-import { verifySpotifyCredentials } from '../services/spotify';
+import { verifySpotifyConnection } from '../services/spotify';
 import { DEFAULT_CLAUDE_MODEL } from '../storage/credentials';
 import { colors, radius, spacing, type } from '../theme';
 
@@ -29,15 +30,11 @@ import { colors, radius, spacing, type } from '../theme';
  * which on web doubles as a CORS check.
  */
 export function SettingsScreen({ navigation, route }) {
-  const { credentials, save, clear, isConfigured, persistence, origin } = useCredentials();
+  const { credentials, save, clear, hasClaude, persistence, origin } = useCredentials();
+  const spotify = useSpotifyAuth();
   const isOnboarding = route?.params?.onboarding ?? false;
 
-  const [form, setForm] = useState({
-    claudeApiKey: '',
-    spotifyClientId: '',
-    spotifyClientSecret: '',
-    claudeModel: '',
-  });
+  const [form, setForm] = useState({ claudeApiKey: '', claudeModel: '' });
   const [status, setStatus] = useState(null); // { kind, message }
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -45,8 +42,6 @@ export function SettingsScreen({ navigation, route }) {
   useEffect(() => {
     setForm({
       claudeApiKey: credentials.claudeApiKey,
-      spotifyClientId: credentials.spotifyClientId,
-      spotifyClientSecret: credentials.spotifyClientSecret,
       claudeModel: credentials.claudeModel,
     });
   }, [credentials]);
@@ -56,8 +51,7 @@ export function SettingsScreen({ navigation, route }) {
     setStatus(null);
   };
 
-  const complete =
-    form.claudeApiKey.trim() && form.spotifyClientId.trim() && form.spotifyClientSecret.trim();
+  const complete = Boolean(form.claudeApiKey.trim());
 
   const handleSave = useCallback(async () => {
     setIsSaving(true);
@@ -96,7 +90,7 @@ export function SettingsScreen({ navigation, route }) {
     }
 
     try {
-      spotifyAlbum = await verifySpotifyCredentials();
+      spotifyAlbum = await verifySpotifyConnection();
     } catch (error) {
       problems.push(`Spotify — ${error.message}`);
     }
@@ -127,10 +121,12 @@ export function SettingsScreen({ navigation, route }) {
           <View style={styles.header}>
             <Text style={styles.title}>{isOnboarding ? 'Welcome to Crate' : 'Settings'}</Text>
             <Text style={styles.intro}>
-              Crate talks to Claude and Spotify directly from this device. Your keys are stored
-              only here — they are never sent anywhere else, and nothing is baked into the app.
+              Sign in with Spotify to browse the catalog. Cover recognition uses Claude, which
+              is a paid API — that key is yours and stays on this device.
             </Text>
           </View>
+
+          <SpotifySection spotify={spotify} />
 
           <Field
             label="Claude API key"
@@ -140,23 +136,6 @@ export function SettingsScreen({ navigation, route }) {
             secure
             help="platform.claude.com → Settings → API keys"
             onHelpPress={() => Linking.openURL('https://platform.claude.com/settings/keys')}
-          />
-
-          <Field
-            label="Spotify client ID"
-            value={form.spotifyClientId}
-            onChangeText={update('spotifyClientId')}
-            placeholder="32-character ID"
-            help="developer.spotify.com/dashboard → your app → Settings"
-            onHelpPress={() => Linking.openURL('https://developer.spotify.com/dashboard')}
-          />
-
-          <Field
-            label="Spotify client secret"
-            value={form.spotifyClientSecret}
-            onChangeText={update('spotifyClientSecret')}
-            placeholder="32-character secret"
-            secure
           />
 
           <Field
@@ -201,9 +180,9 @@ export function SettingsScreen({ navigation, route }) {
             />
           </View>
 
-          <StorageNote isConfigured={isConfigured} persistence={persistence} origin={origin} />
+          <StorageNote isConfigured={hasClaude} persistence={persistence} origin={origin} />
 
-          {isConfigured && !isOnboarding ? (
+          {hasClaude && !isOnboarding ? (
             <Pressable
               onPress={handleClear}
               accessibilityRole="button"
@@ -220,6 +199,55 @@ export function SettingsScreen({ navigation, route }) {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Spotify sign-in.
+ *
+ * No credentials to type: PKCE means the app carries only a public client ID
+ * and the user authorises with their own account.
+ */
+function SpotifySection({ spotify }) {
+  if (!spotify.isConfigured) {
+    return (
+      <View style={styles.storageNote}>
+        <Text style={styles.fieldLabel}>Spotify</Text>
+        <Text style={styles.storageNoteText}>
+          This build has no Spotify client ID, so catalog search is unavailable. See the README
+          for how to set EXPO_PUBLIC_SPOTIFY_CLIENT_ID.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.spotifySection}>
+      <View style={styles.fieldHeader}>
+        <Text style={styles.fieldLabel}>Spotify</Text>
+        <Text style={styles.spotifyState}>
+          {spotify.isSignedIn ? 'Signed in' : 'Not signed in'}
+        </Text>
+      </View>
+
+      <Button
+        label={spotify.isSignedIn ? 'Sign out of Spotify' : 'Log in with Spotify'}
+        variant={spotify.isSignedIn ? 'secondary' : 'spotify'}
+        onPress={spotify.isSignedIn ? spotify.signOut : spotify.signIn}
+        disabled={!spotify.isSignedIn && !spotify.canSignIn}
+        loading={spotify.isSigningIn}
+      />
+
+      {spotify.error ? <Text style={styles.spotifyError}>{spotify.error}</Text> : null}
+
+      {!spotify.isSignedIn && spotify.redirectUri ? (
+        <Text style={styles.storageNoteText}>
+          If sign-in fails with an invalid redirect URI, add this exact value to your Spotify
+          app&rsquo;s Redirect URIs:{'\n'}
+          {spotify.redirectUri}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -375,6 +403,23 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
+  },
+  spotifySection: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  spotifyState: {
+    ...type.caption,
+    color: colors.textSecondary,
+  },
+  spotifyError: {
+    ...type.caption,
+    color: colors.danger,
+    lineHeight: 18,
   },
   storageNote: {
     gap: spacing.sm,

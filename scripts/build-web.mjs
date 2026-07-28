@@ -179,6 +179,9 @@ async function* walk(dir) {
   }
 }
 
+// NOTE: EXPO_PUBLIC_SPOTIFY_CLIENT_ID is deliberately absent. Under PKCE the
+// client ID is a public identifier meant to ship in the bundle; the secret is
+// what must never appear, and it is no longer used at all.
 const SECRET_PATTERNS = [
   { name: 'Claude API key', re: /sk-ant-[A-Za-z0-9_-]{20,}/ },
   { name: 'EXPO_PUBLIC_CLAUDE_API_KEY value', re: /EXPO_PUBLIC_CLAUDE_API_KEY["'\s:=]+["'][^"']{12,}/ },
@@ -186,7 +189,6 @@ const SECRET_PATTERNS = [
     name: 'EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET value',
     re: /EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET["'\s:=]+["'][^"']{12,}/,
   },
-  { name: 'EXPO_PUBLIC_SPOTIFY_CLIENT_ID value', re: /EXPO_PUBLIC_SPOTIFY_CLIENT_ID["'\s:=]+["'][^"']{12,}/ },
 ];
 
 const leaks = [];

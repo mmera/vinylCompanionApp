@@ -4,10 +4,7 @@ import {
   clearCredentials,
   getCredentials,
   hasClaudeCredentials,
-  hasSpotifyCredentials,
   hydrateCredentials,
-  isFullyConfigured,
-  missingCredentialLabels,
   saveCredentials,
   subscribeToCredentials,
 } from '../storage/credentials';
@@ -67,9 +64,6 @@ export function CredentialsProvider({ children }) {
       persistence,
       origin: storageOrigin(),
       hasClaude: hasClaudeCredentials(credentials),
-      hasSpotify: hasSpotifyCredentials(credentials),
-      isConfigured: isFullyConfigured(credentials),
-      missing: missingCredentialLabels(credentials),
     }),
     [credentials, isReady, save, clear, persistence],
   );

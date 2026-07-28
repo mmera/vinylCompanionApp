@@ -29,8 +29,6 @@ function clean(value) {
 /** Seeds from .env — present in local dev, empty in the deployed web build. */
 const ENV_DEFAULTS = {
   claudeApiKey: clean(process.env.EXPO_PUBLIC_CLAUDE_API_KEY),
-  spotifyClientId: clean(process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID),
-  spotifyClientSecret: clean(process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET),
   claudeModel: clean(process.env.EXPO_PUBLIC_CLAUDE_MODEL),
 };
 
@@ -38,8 +36,6 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
 
 const EMPTY = {
   claudeApiKey: '',
-  spotifyClientId: '',
-  spotifyClientSecret: '',
   claudeModel: '',
 };
 
@@ -61,9 +57,6 @@ export async function hydrateCredentials() {
       // Anything the user saved wins over the .env seed.
       cache = {
         claudeApiKey: clean(saved.claudeApiKey) || ENV_DEFAULTS.claudeApiKey,
-        spotifyClientId: clean(saved.spotifyClientId) || ENV_DEFAULTS.spotifyClientId,
-        spotifyClientSecret:
-          clean(saved.spotifyClientSecret) || ENV_DEFAULTS.spotifyClientSecret,
         claudeModel: clean(saved.claudeModel) || ENV_DEFAULTS.claudeModel,
       };
     }
@@ -88,8 +81,6 @@ export function getClaudeModel() {
 export async function saveCredentials(next) {
   cache = {
     claudeApiKey: clean(next.claudeApiKey),
-    spotifyClientId: clean(next.spotifyClientId),
-    spotifyClientSecret: clean(next.spotifyClientSecret),
     claudeModel: clean(next.claudeModel),
   };
   hydrated = true;
@@ -126,19 +117,8 @@ export function hasClaudeCredentials(credentials = cache) {
   return Boolean(credentials.claudeApiKey);
 }
 
-export function hasSpotifyCredentials(credentials = cache) {
-  return Boolean(credentials.spotifyClientId && credentials.spotifyClientSecret);
-}
-
-export function isFullyConfigured(credentials = cache) {
-  return hasClaudeCredentials(credentials) && hasSpotifyCredentials(credentials);
-}
-
-/** Which fields are still missing, for onboarding copy. */
-export function missingCredentialLabels(credentials = cache) {
-  const missing = [];
-  if (!credentials.claudeApiKey) missing.push('Claude API key');
-  if (!credentials.spotifyClientId) missing.push('Spotify client ID');
-  if (!credentials.spotifyClientSecret) missing.push('Spotify client secret');
-  return missing;
-}
+/**
+ * Spotify no longer lives here — it uses a PKCE sign-in (see
+ * `storage/spotifySession.js`) rather than developer credentials typed in by
+ * the user. The only thing left in this store is the Claude API key.
+ */
