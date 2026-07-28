@@ -30,7 +30,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "smoke": "node scripts/smoke-test.mjs",
-    "build:web": "EXPO_NO_DOTENV=1 expo export --platform web && node scripts/build-web.mjs"
+    "build:web": "EXPO_NO_DOTENV=1 expo export --platform web --clear && node scripts/build-web.mjs"
   },
   "private": true
 }

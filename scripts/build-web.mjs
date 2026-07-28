@@ -214,6 +214,23 @@ if (leaks.length) {
 }
 ok('no credentials found in the build output');
 
+// ── 3b. Report whether Spotify sign-in will actually work ───────────────────
+// EXPO_PUBLIC_* is inlined during the build, never read at runtime, so a
+// deploy that ran before the variable was set silently produces a bundle with
+// no client ID — and the only symptom is a Settings screen with no sign-in
+// button. Say so here, where it is visible in the CI log.
+const spotifyClientId = (process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '').trim();
+if (spotifyClientId) {
+  // Safe to print a fragment: under PKCE this is a public identifier, and it
+  // is the only proof the variable actually reached the build.
+  ok(`Spotify sign-in enabled (client ID …${spotifyClientId.slice(-4)})`);
+} else {
+  warn('EXPO_PUBLIC_SPOTIFY_CLIENT_ID is not set — this build has no Spotify sign-in.');
+  warn('  In CI: set the SPOTIFY_CLIENT_ID repository *variable* (Settings →');
+  warn('  Secrets and variables → Actions → Variables), then re-run this workflow.');
+  warn('  Users of the built app can still paste a client ID in Settings.');
+}
+
 // ── 4. Report ───────────────────────────────────────────────────────────────
 let bytes = 0;
 let count = 0;

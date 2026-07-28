@@ -37,6 +37,9 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-5';
 const EMPTY = {
   claudeApiKey: '',
   claudeModel: '',
+  // Not a credential: a fallback for the Spotify client ID when the build was
+  // made without one. See `config/spotifyConfig.js`.
+  spotifyClientId: '',
 };
 
 let cache = { ...EMPTY, ...ENV_DEFAULTS };
@@ -58,6 +61,7 @@ export async function hydrateCredentials() {
       cache = {
         claudeApiKey: clean(saved.claudeApiKey) || ENV_DEFAULTS.claudeApiKey,
         claudeModel: clean(saved.claudeModel) || ENV_DEFAULTS.claudeModel,
+        spotifyClientId: clean(saved.spotifyClientId),
       };
     }
   } catch {
@@ -78,10 +82,19 @@ export function getClaudeModel() {
   return cache.claudeModel || DEFAULT_CLAUDE_MODEL;
 }
 
+/**
+ * Save whichever fields are present. Callers own different parts of this
+ * store — the Settings form owns the Claude fields, the Spotify section owns
+ * the client ID — so an omitted key means "leave it alone" rather than
+ * "clear it". Without that, whichever section saved last would wipe the other.
+ */
 export async function saveCredentials(next) {
+  const merge = (key) => (key in next ? clean(next[key]) : cache[key]);
+
   cache = {
-    claudeApiKey: clean(next.claudeApiKey),
-    claudeModel: clean(next.claudeModel),
+    claudeApiKey: merge('claudeApiKey'),
+    claudeModel: merge('claudeModel'),
+    spotifyClientId: merge('spotifyClientId'),
   };
   hydrated = true;
 
@@ -96,8 +109,14 @@ export async function saveCredentials(next) {
   return cache;
 }
 
+/**
+ * Removes the keys, not the Spotify client ID — that is a public identifier
+ * standing in for a missing build-time value, and dropping it here would sign
+ * the user out of Spotify as a side effect of clearing their Claude key. The
+ * Spotify section has its own control for forgetting it.
+ */
 export async function clearCredentials() {
-  cache = { ...EMPTY };
+  cache = { ...EMPTY, spotifyClientId: cache.spotifyClientId };
   hydrated = true;
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -118,7 +137,11 @@ export function hasClaudeCredentials(credentials = cache) {
 }
 
 /**
- * Spotify no longer lives here — it uses a PKCE sign-in (see
- * `storage/spotifySession.js`) rather than developer credentials typed in by
- * the user. The only thing left in this store is the Claude API key.
+ * Spotify credentials no longer live here — sign-in is PKCE (see
+ * `storage/spotifySession.js`) rather than a developer ID and secret typed in
+ * by the user. The one Spotify value left is `spotifyClientId`, and it is not
+ * a credential: under PKCE the client ID is a public identifier that normally
+ * ships in the bundle. It is kept here only as a fallback for builds made
+ * without `EXPO_PUBLIC_SPOTIFY_CLIENT_ID`, so a missing build-time variable
+ * leaves the app fixable instead of bricked.
  */

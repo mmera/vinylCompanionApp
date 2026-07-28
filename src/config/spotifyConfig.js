@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 
+import { getCredentials } from '../storage/credentials';
+
 /**
  * Spotify OAuth configuration (Authorization Code + PKCE).
  *
@@ -11,7 +13,24 @@ import { makeRedirectUri } from 'expo-auth-session';
  * stop asking users for developer credentials.
  */
 
-export const SPOTIFY_CLIENT_ID = (process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '').trim();
+/**
+ * Baked in at build time from the environment. Empty in any build made without
+ * the variable set — including a deploy that ran before the repository
+ * variable existed, since `EXPO_PUBLIC_*` is inlined during the build and not
+ * read at runtime.
+ */
+export const BUILD_SPOTIFY_CLIENT_ID = (process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '').trim();
+
+/**
+ * The client ID to authorise with: whatever was compiled in, or a value the
+ * user saved on this device when the build carried none. The override exists
+ * so a build without the variable is recoverable in Settings rather than a
+ * dead end — pasting a public identifier is a far smaller ask than waiting on
+ * someone to redeploy.
+ */
+export function getSpotifyClientId() {
+  return BUILD_SPOTIFY_CLIENT_ID || getCredentials().spotifyClientId;
+}
 
 export const SPOTIFY_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.spotify.com/authorize',
@@ -42,4 +61,6 @@ export function spotifyRedirectUri() {
   return `${window.location.origin}${path}/`;
 }
 
-export const hasSpotifyAppConfigured = Boolean(SPOTIFY_CLIENT_ID);
+export function hasSpotifyClientId() {
+  return Boolean(getSpotifyClientId());
+}

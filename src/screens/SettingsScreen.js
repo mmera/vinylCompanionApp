@@ -111,6 +111,28 @@ export function SettingsScreen({ navigation, route }) {
     setStatus({ kind: 'success', message: 'Keys removed from this device.' });
   }, [clear]);
 
+  const handleSaveClientId = useCallback(
+    async (clientId) => {
+      setStatus(null);
+      try {
+        await save({ spotifyClientId: clientId });
+        setStatus({ kind: 'success', message: 'Client ID saved. You can sign in now.' });
+      } catch (error) {
+        setStatus({ kind: 'error', message: error.message ?? 'Could not save.' });
+      }
+    },
+    [save],
+  );
+
+  // The saved session was minted by the old client ID, so it is no longer
+  // renewable — drop it with the ID rather than leave a token that will fail
+  // at its next refresh.
+  const handleForgetClientId = useCallback(async () => {
+    await spotify.signOut();
+    await save({ spotifyClientId: '' });
+    setStatus({ kind: 'success', message: 'Spotify client ID removed from this device.' });
+  }, [save, spotify]);
+
   return (
     <SafeAreaView style={styles.fill} edges={['bottom']}>
       <KeyboardAvoidingView
@@ -126,7 +148,11 @@ export function SettingsScreen({ navigation, route }) {
             </Text>
           </View>
 
-          <SpotifySection spotify={spotify} />
+          <SpotifySection
+            spotify={spotify}
+            onSaveClientId={handleSaveClientId}
+            onForgetClientId={handleForgetClientId}
+          />
 
           <Field
             label="Claude API key"
@@ -207,16 +233,68 @@ export function SettingsScreen({ navigation, route }) {
  *
  * No credentials to type: PKCE means the app carries only a public client ID
  * and the user authorises with their own account.
+ *
+ * The exception is a build made without EXPO_PUBLIC_SPOTIFY_CLIENT_ID — which
+ * is easy to end up with, since the variable is inlined at build time, so a
+ * deploy that ran before it was set produces a bundle with none. Rather than
+ * leave that a dead end fixable only by redeploying, the client ID can be
+ * pasted here. It is a public identifier, not a secret.
  */
-function SpotifySection({ spotify }) {
+function SpotifySection({ spotify, onSaveClientId, onForgetClientId }) {
+  const [draft, setDraft] = useState('');
+  const [isSavingId, setIsSavingId] = useState(false);
+
+  const handleSaveClientId = useCallback(async () => {
+    setIsSavingId(true);
+    try {
+      await onSaveClientId(draft.trim());
+      setDraft('');
+    } finally {
+      setIsSavingId(false);
+    }
+  }, [draft, onSaveClientId]);
+
   if (!spotify.isConfigured) {
     return (
-      <View style={styles.storageNote}>
-        <Text style={styles.fieldLabel}>Spotify</Text>
+      <View style={styles.spotifySection}>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.fieldLabel}>Spotify</Text>
+          <Text style={styles.spotifyState}>Not set up</Text>
+        </View>
+
         <Text style={styles.storageNoteText}>
-          This build has no Spotify client ID, so catalog search is unavailable. See the README
-          for how to set EXPO_PUBLIC_SPOTIFY_CLIENT_ID.
+          This build shipped without a Spotify client ID, so there is nothing to sign in to
+          yet. Paste one below to use it on this device — under PKCE the client ID is a public
+          identifier, not a secret. It is found at developer.spotify.com/dashboard → your app →
+          Settings.
         </Text>
+
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Spotify client ID"
+          placeholderTextColor={colors.textTertiary}
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          accessibilityLabel="Spotify client ID"
+        />
+
+        <Button
+          label="Save client ID"
+          variant="spotify"
+          onPress={handleSaveClientId}
+          disabled={!draft.trim()}
+          loading={isSavingId}
+        />
+
+        {spotify.redirectUri ? (
+          <Text style={styles.storageNoteText}>
+            That Spotify app also needs this exact redirect URI:{'\n'}
+            {spotify.redirectUri}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -246,6 +324,14 @@ function SpotifySection({ spotify }) {
           app&rsquo;s Redirect URIs:{'\n'}
           {spotify.redirectUri}
         </Text>
+      ) : null}
+
+      {spotify.usingSavedClientId ? (
+        <Pressable onPress={onForgetClientId} hitSlop={6}>
+          <Text style={[styles.help, styles.helpLink]}>
+            Using the client ID saved on this device — forget it
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   );

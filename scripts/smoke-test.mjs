@@ -41,8 +41,16 @@ const value = (key) => {
 
 const CLAUDE_API_KEY = value('EXPO_PUBLIC_CLAUDE_API_KEY');
 const SPOTIFY_CLIENT_ID = value('EXPO_PUBLIC_SPOTIFY_CLIENT_ID');
-const SPOTIFY_CLIENT_SECRET = value('EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET');
 const CLAUDE_MODEL = value('EXPO_PUBLIC_CLAUDE_MODEL') || 'claude-sonnet-5';
+
+// The redirect URI to validate against the dashboard registration. Defaults to
+// the native one, which is the same on every machine; override to check the
+// web one for a particular deployment.
+const SPOTIFY_REDIRECT_URI = value('SPOTIFY_REDIRECT_URI') || 'crate://spotify-auth';
+
+// Optional. Catalog reads need a user token, which PKCE can only mint through
+// a browser — so paste one here to run the API contract checks headlessly.
+const SPOTIFY_ACCESS_TOKEN = value('SPOTIFY_ACCESS_TOKEN');
 
 // ── output helpers ──────────────────────────────────────────────────────────
 const tty = process.stdout.isTTY;
@@ -64,48 +72,75 @@ function section(title) {
   console.log(`\n${bold(title)}`);
 }
 
-// ── 1. Spotify: auth ────────────────────────────────────────────────────────
-async function spotifyToken() {
-  const credentials = Buffer.from(
-    `${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`,
-  ).toString('base64');
-
-  const response = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
+/**
+ * ── 1. Spotify: is the client ID + redirect URI pair actually registered? ───
+ *
+ * There is no headless way to complete a PKCE sign-in, but the failure this
+ * check catches is the one that actually bites: an unknown client ID, or a
+ * redirect URI that doesn't match the dashboard byte-for-byte. Spotify answers
+ * both with an `INVALID_CLIENT` error page instead of the login screen, so
+ * asking for the authorize page tells us which — without a browser.
+ */
+async function spotifyAuthorizeCheck() {
+  const params = new URLSearchParams({
+    client_id: SPOTIFY_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: SPOTIFY_REDIRECT_URI,
+    code_challenge_method: 'S256',
+    // Any well-formed challenge will do; it is never redeemed.
+    code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`HTTP ${response.status} — ${body.slice(0, 160)}`);
-  }
-  return (await response.json()).access_token;
+  const response = await fetch(`https://accounts.spotify.com/authorize?${params}`, {
+    redirect: 'manual',
+  });
+
+  // A registered pair sends us on to the login/consent page.
+  if (response.status >= 300 && response.status < 400) return;
+
+  // Don't take a 200 as a pass without looking: Spotify renders some of these
+  // errors as an ordinary page rather than an HTTP error.
+  const body = await response.text();
+  const invalid = body.match(/INVALID_CLIENT:[^<\n]*/)?.[0];
+  if (invalid) throw new Error(invalid.trim());
+  if (response.ok) return;
+
+  throw new Error(`HTTP ${response.status} — ${body.replace(/\s+/g, ' ').slice(0, 160)}`);
 }
 
 // ── 2. Spotify: search + the preview_url question ───────────────────────────
 async function spotifyChecks() {
   section('Spotify');
 
-  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-    record('credentials present', false, 'Set EXPO_PUBLIC_SPOTIFY_CLIENT_ID and _SECRET in .env');
+  if (!SPOTIFY_CLIENT_ID) {
+    record('client ID present', false, 'Set EXPO_PUBLIC_SPOTIFY_CLIENT_ID in .env');
     return;
   }
 
-  let token;
   try {
-    token = await spotifyToken();
-    record('client-credentials auth', true);
+    await spotifyAuthorizeCheck();
+    record('client ID + redirect URI registered', true, SPOTIFY_REDIRECT_URI);
   } catch (error) {
-    record('client-credentials auth', false, error.message);
+    record('client ID + redirect URI registered', false, error.message);
+    note('');
+    note('Spotify matches redirect URIs exactly. Add this one to the app at');
+    note('developer.spotify.com/dashboard → Settings → Redirect URIs, or set');
+    note('SPOTIFY_REDIRECT_URI to the one you want to check.');
+    return;
+  }
+
+  if (!SPOTIFY_ACCESS_TOKEN) {
+    note('');
+    note('Skipping catalog checks: they need a user token, and PKCE can only');
+    note('mint one through a browser. To run them, sign in to Crate, copy the');
+    note('access token from storage, and set SPOTIFY_ACCESS_TOKEN.');
     return;
   }
 
   const get = async (url) => {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${SPOTIFY_ACCESS_TOKEN}` },
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   };

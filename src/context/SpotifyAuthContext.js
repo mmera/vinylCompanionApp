@@ -2,12 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { exchangeCodeAsync, useAuthRequest } from 'expo-auth-session';
 
 import {
-  SPOTIFY_CLIENT_ID,
+  BUILD_SPOTIFY_CLIENT_ID,
   SPOTIFY_DISCOVERY,
   SPOTIFY_SCOPES,
-  hasSpotifyAppConfigured,
   spotifyRedirectUri,
 } from '../config/spotifyConfig';
+import { useCredentials } from './CredentialsContext';
 import {
   clearSpotifySession,
   getSpotifySession,
@@ -27,6 +27,7 @@ import {
 const SpotifyAuthContext = createContext(null);
 
 export function SpotifyAuthProvider({ children }) {
+  const { credentials } = useCredentials();
   const [session, setSession] = useState(getSpotifySession);
   const [isReady, setIsReady] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -34,9 +35,13 @@ export function SpotifyAuthProvider({ children }) {
 
   const redirectUri = useMemo(() => spotifyRedirectUri(), []);
 
+  // Read through the store rather than the module constant, so a client ID
+  // saved in Settings takes effect without a reload.
+  const clientId = BUILD_SPOTIFY_CLIENT_ID || credentials.spotifyClientId;
+
   const [request, response, promptAsync] = useAuthRequest(
     {
-      clientId: SPOTIFY_CLIENT_ID,
+      clientId,
       scopes: SPOTIFY_SCOPES,
       usePKCE: true,
       redirectUri,
@@ -82,7 +87,7 @@ export function SpotifyAuthProvider({ children }) {
       try {
         const token = await exchangeCodeAsync(
           {
-            clientId: SPOTIFY_CLIENT_ID,
+            clientId,
             code: response.params.code,
             redirectUri,
             // The verifier proves this exchange belongs to the request that
@@ -110,11 +115,11 @@ export function SpotifyAuthProvider({ children }) {
     return () => {
       active = false;
     };
-  }, [response, request, redirectUri]);
+  }, [response, request, redirectUri, clientId]);
 
   const signIn = useCallback(async () => {
-    if (!hasSpotifyAppConfigured) {
-      setError('This build has no Spotify client ID. See the README.');
+    if (!clientId) {
+      setError('No Spotify client ID — add one below, or set it in the build.');
       return;
     }
     if (!request) return; // Still preparing the PKCE challenge.
@@ -126,7 +131,7 @@ export function SpotifyAuthProvider({ children }) {
       setError(promptError?.message ?? 'Could not open Spotify sign-in.');
       setIsSigningIn(false);
     }
-  }, [request, promptAsync]);
+  }, [clientId, request, promptAsync]);
 
   const signOut = useCallback(async () => {
     await clearSpotifySession();
@@ -142,10 +147,13 @@ export function SpotifyAuthProvider({ children }) {
       signIn,
       signOut,
       redirectUri,
-      canSignIn: hasSpotifyAppConfigured && Boolean(request),
-      isConfigured: hasSpotifyAppConfigured,
+      canSignIn: Boolean(clientId) && Boolean(request),
+      isConfigured: Boolean(clientId),
+      // True when the client ID came from Settings rather than the build, so
+      // the UI can offer to forget it.
+      usingSavedClientId: !BUILD_SPOTIFY_CLIENT_ID && Boolean(clientId),
     }),
-    [session, isReady, isSigningIn, error, signIn, signOut, redirectUri, request],
+    [session, isReady, isSigningIn, error, signIn, signOut, redirectUri, request, clientId],
   );
 
   return <SpotifyAuthContext.Provider value={value}>{children}</SpotifyAuthContext.Provider>;

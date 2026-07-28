@@ -38,6 +38,14 @@ catalog data; signing in exists to obtain a token, not to reach into anyone's ac
 3. Copy the **Client ID** into a repository *variable* named `SPOTIFY_CLIENT_ID`
    (Settings → Secrets and variables → Actions → **Variables**, not Secrets — it isn't
    one), and into `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` in your local `.env`.
+4. **Re-run the deploy.** `EXPO_PUBLIC_*` values are inlined into the bundle *during the
+   build*, so a deploy that ran before you set the variable has no client ID in it and
+   setting the variable afterwards changes nothing until the next build. The build log
+   says which it was: `Spotify sign-in enabled (client ID …abcd)`, or a warning.
+
+If a build does go out without one, it isn't a dead end: Settings offers a field to paste
+the client ID, saved on that device. Handy for anyone forking this without CI, and the
+reason a forgotten variable is an annoyance rather than a broken app.
 
 > **Development Mode caps you at 25 users.** New Spotify apps only allow 25 accounts,
 > each added by email in the dashboard. Going beyond that needs a **quota extension
@@ -123,13 +131,19 @@ icon in the address bar on desktop Chrome/Edge.
 npm run build:web        # → dist/
 ```
 
-This runs `expo export --platform web` with `EXPO_NO_DOTENV=1`, then
+This runs `expo export --platform web --clear` with `EXPO_NO_DOTENV=1`, then
 `scripts/build-web.mjs`, which:
 
 1. Injects the manifest link, theme colour, iOS meta tags, and service worker
    registration into Expo's generated `index.html`.
 2. Checks the files GitHub Pages needs actually made it across.
 3. **Scans every built file for credentials and exits non-zero if it finds any.**
+4. Reports whether a Spotify client ID was compiled in.
+
+The `--clear` is not decoration. `EXPO_PUBLIC_*` values are substituted into the source
+during transform, and Metro's transform cache is not keyed on their values — so setting a
+variable and rebuilding will happily reuse the cached module and produce a bundle with the
+*old* value silently baked in. Step 4 exists to make that visible either way.
 
 Step 3 is the important one. `EXPO_PUBLIC_*` variables are inlined into the JS bundle at
 build time, so a stray `.env` during a build would publish your keys to a public URL.

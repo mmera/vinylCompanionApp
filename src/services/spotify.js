@@ -1,6 +1,6 @@
 import { refreshAsync } from 'expo-auth-session';
 
-import { SPOTIFY_CLIENT_ID, SPOTIFY_DISCOVERY } from '../config/spotifyConfig';
+import { SPOTIFY_DISCOVERY, getSpotifyClientId } from '../config/spotifyConfig';
 import {
   clearSpotifySession,
   getSpotifySession,
@@ -52,7 +52,7 @@ async function refreshAccessToken() {
 
   if (!inFlightRefresh) {
     inFlightRefresh = refreshAsync(
-      { clientId: SPOTIFY_CLIENT_ID, refreshToken: session.refreshToken },
+      { clientId: getSpotifyClientId(), refreshToken: session.refreshToken },
       SPOTIFY_DISCOVERY,
     )
       .then(async (token) => {
