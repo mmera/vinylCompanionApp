@@ -29,7 +29,7 @@ import { colors, radius, spacing, type } from '../theme';
  * which on web doubles as a CORS check.
  */
 export function SettingsScreen({ navigation, route }) {
-  const { credentials, save, clear, isConfigured } = useCredentials();
+  const { credentials, save, clear, isConfigured, persistence, origin } = useCredentials();
   const isOnboarding = route?.params?.onboarding ?? false;
 
   const [form, setForm] = useState({
@@ -201,6 +201,8 @@ export function SettingsScreen({ navigation, route }) {
             />
           </View>
 
+          <StorageNote isConfigured={isConfigured} persistence={persistence} origin={origin} />
+
           {isConfigured && !isOnboarding ? (
             <Pressable
               onPress={handleClear}
@@ -218,6 +220,43 @@ export function SettingsScreen({ navigation, route }) {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Where the keys live, and whether the browser has promised to keep them.
+ *
+ * Worth stating plainly: storage is per-origin, so opening the app at a
+ * different address (http vs https, or a different domain) presents an empty
+ * store and looks like the keys were lost.
+ */
+function StorageNote({ isConfigured, persistence, origin }) {
+  if (!isConfigured) return null;
+
+  const lines = [];
+
+  if (origin) {
+    lines.push(`Saved in this browser for ${origin}. Opening Crate at a different address means entering them again.`);
+  } else {
+    lines.push('Saved on this device.');
+  }
+
+  if (persistence.supported && persistence.persisted) {
+    lines.push('This browser has marked the storage as persistent, so it will not be cleared automatically.');
+  } else if (persistence.supported) {
+    lines.push(
+      'This browser has not granted persistent storage, so it may clear the keys if space runs low — or, on iOS, after about a week without a visit. Adding Crate to your Home Screen makes it far more likely to be granted.',
+    );
+  }
+
+  return (
+    <View style={styles.storageNote}>
+      {lines.map((line) => (
+        <Text key={line} style={styles.storageNoteText}>
+          {line}
+        </Text>
+      ))}
+    </View>
   );
 }
 
@@ -336,6 +375,18 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.sm,
+  },
+  storageNote: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  storageNoteText: {
+    ...type.caption,
+    lineHeight: 18,
   },
   clear: {
     alignItems: 'center',

@@ -26,6 +26,27 @@ build fails if it ever does (see [Deploying](#deploying-as-a-pwa)).
 That's what makes it safe to host the PWA at a public URL. Anyone can visit it, but they
 bring their own keys and see their own collection.
 
+### Keys are stored per origin
+
+Browser storage is scoped to the exact origin — scheme *and* host. These are three
+separate stores, and keys entered in one are invisible to the others:
+
+```
+http://example.com/app/     ① different scheme
+https://example.com/app/    ②
+https://user.github.io/app/ ③ different host
+```
+
+So changing domain, or moving from HTTP to HTTPS, means entering the keys once more.
+That's browser behaviour, not the app forgetting them. Settings shows which origin the
+current keys belong to.
+
+Crate also calls `navigator.storage.persist()` at startup and again after you save, which
+asks the browser not to evict the store. Without it, iOS Safari clears script-writable
+storage after about a week without a visit, and Chromium may clear it under disk
+pressure. Adding Crate to your Home Screen makes the request far more likely to be
+granted — Settings tells you whether it was.
+
 ### Getting a Claude API key
 
 1. Sign in at [platform.claude.com](https://platform.claude.com).
@@ -212,6 +233,7 @@ your app.
 | Deep link | "Open in Spotify" opens the app if installed, else the web player |
 | Offline | Airplane mode — errors surface as messages, nothing crashes |
 | Persistence | Force-quit and reopen; collection and keys are still there |
+| Storage note | Settings shows the origin keys are bound to, and whether storage is persistent |
 | PWA install | Add to Home Screen; launches standalone with no browser chrome |
 
 ### Known gaps
@@ -329,5 +351,6 @@ Anything with vision and structured-output support will work.
 | Deployed site is blank | `.nojekyll` missing from the build, or Pages source isn't set to GitHub Actions. |
 | Site loads at an unexpected domain | A custom domain is set on this repo's Pages settings, or inherited from your `<user>.github.io` user site. See [Which URL does it land on?](#which-url-does-it-land-on). |
 | "Camera needs a secure connection" | Page loaded over HTTP. Tick **Settings → Pages → Enforce HTTPS** once the certificate is issued. |
+| Keys keep needing re-entry | Storage is per-origin — check the address matches what Settings reports. If it does, the browser is evicting storage: install to the Home Screen to get persistent storage granted. |
 | Deploy fails on the audit step | A credential reached the bundle — check for a `.env` in CI. Working as intended. |
 | PWA won't install | Needs HTTPS, a reachable manifest, and a registered service worker. Check the browser console. |
