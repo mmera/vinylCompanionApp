@@ -7,11 +7,9 @@ import {
   addToCollection,
   loadCollection,
   removeFromCollection,
-  setRecordGenres,
   setRecordStatus,
   updateManualRecord,
 } from '../storage/collection';
-import { fetchArtistGenres } from '../services/spotify';
 
 /**
  * Holds the collection in memory so the scanner, grid, and detail screens all
@@ -39,48 +37,6 @@ export function CollectionProvider({ children }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  /*
-   * Fill in genres for anything that hasn't been looked up yet.
-   *
-   * Genre comes from the artist, so it needs a request the collection screen
-   * can't make per render — it is looked up once, in a batch, and stored on
-   * the record. Doing it here rather than at add time means records saved
-   * before genres existed are filled in by the same code path, with no
-   * separate migration.
-   *
-   * Best-effort throughout: signed out, offline, or refused all leave the
-   * records untouched and sorting by genre simply groups them under "No
-   * genre". `null` marks "asked, hasn't got one" so it isn't asked again.
-   */
-  useEffect(() => {
-    if (isLoading) return undefined;
-
-    const pending = records.filter((record) => record.artistId && !('genre' in record));
-    if (!pending.length) return undefined;
-
-    let active = true;
-    (async () => {
-      try {
-        const byArtist = await fetchArtistGenres(pending.map((record) => record.artistId));
-        if (!active) return;
-
-        const byRecord = {};
-        for (const record of pending) {
-          if (record.artistId in byArtist) byRecord[record.id] = byArtist[record.artistId];
-        }
-
-        const next = await setRecordGenres(byRecord);
-        if (active && next) setRecords(next);
-      } catch {
-        // Nothing to tell the user: the shelf works without genres.
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [records, isLoading]);
 
   const add = useCallback(async (album, options) => {
     const { records: next, added } = await addToCollection(album, options);

@@ -262,8 +262,6 @@ your app.
 | Silent switch | Flip the ringer to silent — previews still audible (pre-cutoff apps only) |
 | Search the shelf | Search, sort and the grid/list toggle appear as soon as there's a record; `fleet rum` finds *Rumours* |
 | Grid / list toggle | Switches density; the choice survives a reload |
-| Sort by genre | Groups under genre headings; anything unclassified collects under "No genre" last |
-| Genre backfill | Records added before this fill in on next launch while signed in; no duplicate lookups after |
 | Wishlist | Add from scan, search and by hand; a wishlisted record never reads "In your collection" |
 | Buying a record | "Got it — add to collection" moves it across; it does not duplicate |
 | Old records | Anything saved before the wishlist existed still shows, as owned |
@@ -351,17 +349,6 @@ The ordering rules live in
 way a shelf does: leading articles are ignored, so **The** Beatles sorts under B and **A**
 Tribe Called Quest under T, and accents are folded so "Björk" is reachable by typing
 `bjork`. Search terms are matched independently, so `fleet rum` finds *Rumours*.
-
-**Genre comes from the artist, not the album.** Spotify's album object has a `genres`
-field, but the simplified album returned by search omits it and the full album object has
-served an empty array for years — grouping by it would put every record in one bucket. The
-*artist* object's genres are populated, so Crate looks those up and stores the first one
-(they arrive ordered roughly by prominence) on the record. Two consequences worth knowing:
-the genre describes the artist, so a band's early and late work sort together; and it needs
-a request, so it is fetched once in a batch and written back rather than looked up per
-render. Records added before genres existed are filled in by the same pass — `genre` absent
-means "never looked up", `null` means "asked, hasn't got one", and only the first is
-retried. Signed out or offline, everything simply groups under "No genre".
 
 The grid is a `SectionList` whose items are *rows* of records rather than records —
 `SectionList` has no `numColumns`, and building the columns by hand is what keeps both

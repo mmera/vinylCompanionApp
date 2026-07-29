@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
-  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -304,17 +303,7 @@ export function CollectionScreen({ navigation }) {
               </View>
             </View>
 
-            {/*
-              Five pills no longer fit a narrow phone (~367pt of content in
-              ~342pt), so the row scrolls rather than wrapping to a second line
-              or squeezing the labels.
-            */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.sortRow}
-            >
+            <View style={styles.sortRow}>
               {SORT_MODES.map((mode) => {
                 const active = mode.id === sort;
                 return (
@@ -336,7 +325,7 @@ export function CollectionScreen({ navigation }) {
                   </Pressable>
                 );
               })}
-            </ScrollView>
+            </View>
           </View>
         ) : null}
       </View>
@@ -531,8 +520,6 @@ const styles = StyleSheet.create({
   sortRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    // Lets the last pill clear the screen edge when scrolled.
-    paddingRight: spacing.lg,
   },
   sortPill: {
     paddingHorizontal: spacing.md,

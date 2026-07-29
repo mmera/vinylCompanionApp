@@ -167,10 +167,6 @@ export async function addToCollection(album, { source = 'scan', status = OWNED }
     thumbnailUrl: album.thumbnailUrl ?? album.imageUrl ?? null,
     spotifyUri: album.spotifyUri ?? `spotify:album:${album.id}`,
     spotifyUrl: album.spotifyUrl ?? `https://open.spotify.com/album/${album.id}`,
-    // Genre is looked up from the artist after the fact, so `genre` is left
-    // absent here deliberately: absent means "never looked up", null means
-    // "looked up, hasn't got one". Only the first is worth retrying.
-    artistId: album.artistId ?? null,
     addedAt: Date.now(),
     source,
     status,
@@ -179,35 +175,6 @@ export async function addToCollection(album, { source = 'scan', status = OWNED }
   const next = [record, ...records];
   await persist(next);
   return { records: next, added: true, moved: false };
-}
-
-/**
- * Write looked-up genres back onto records, as `{ recordId: genre|null }`.
- *
- * One pass over the array rather than a call per record, because the lookup
- * that produces this is itself batched.
- *
- * @returns {Promise<CollectionRecord[]|null>} null when nothing changed, so the
- *   caller can skip a pointless state update on every launch.
- */
-export async function setRecordGenres(genresById) {
-  const ids = Object.keys(genresById);
-  if (!ids.length) return null;
-
-  const records = await loadCollection();
-  let changed = false;
-
-  const next = records.map((record) => {
-    if (!(record.id in genresById)) return record;
-    const genre = genresById[record.id];
-    if (record.genre === genre) return record;
-    changed = true;
-    return { ...record, genre };
-  });
-
-  if (!changed) return null;
-  await persist(next);
-  return next;
 }
 
 /**
