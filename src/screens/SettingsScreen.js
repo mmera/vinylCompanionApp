@@ -303,10 +303,28 @@ function SpotifySection({ spotify, onSaveClientId, onForgetClientId }) {
     <View style={styles.spotifySection}>
       <View style={styles.fieldHeader}>
         <Text style={styles.fieldLabel}>Spotify</Text>
-        <Text style={styles.spotifyState}>
-          {spotify.isSignedIn ? 'Signed in' : 'Not signed in'}
+        <Text style={[styles.spotifyState, spotify.accessDenied && styles.spotifyStateWarn]}>
+          {spotify.accessDenied
+            ? 'Signed in · not allowed'
+            : spotify.isSignedIn
+              ? 'Signed in'
+              : 'Not signed in'}
         </Text>
       </View>
+
+      {/*
+        The state that reads as a bug: signed in, and every request refused.
+        Saying so here means the answer is next to the status rather than
+        buried in whatever error the last search happened to show.
+      */}
+      {spotify.accessDenied ? (
+        <Text style={styles.spotifyError}>
+          Spotify is refusing this account. New apps run in Development Mode, where only
+          accounts added under User Management may use them — add the account you signed in
+          with at developer.spotify.com/dashboard → your app → User Management. Signing in
+          again won&rsquo;t help until then.
+        </Text>
+      ) : null}
 
       <Button
         label={spotify.isSignedIn ? 'Sign out of Spotify' : 'Log in with Spotify'}
@@ -501,6 +519,10 @@ const styles = StyleSheet.create({
   spotifyState: {
     ...type.caption,
     color: colors.textSecondary,
+  },
+  spotifyStateWarn: {
+    color: colors.danger,
+    fontWeight: '600',
   },
   spotifyError: {
     ...type.caption,

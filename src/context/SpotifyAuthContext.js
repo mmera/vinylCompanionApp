@@ -12,6 +12,7 @@ import {
   clearSpotifySession,
   getSpotifySession,
   hydrateSpotifySession,
+  isAccessDenied,
   saveSpotifySession,
   subscribeToSpotifySession,
 } from '../storage/spotifySession';
@@ -29,6 +30,9 @@ const SpotifyAuthContext = createContext(null);
 export function SpotifyAuthProvider({ children }) {
   const { credentials } = useCredentials();
   const [session, setSession] = useState(getSpotifySession);
+  // Re-read on every session notification; `setAccessDenied` notifies too, so
+  // a refusal mid-session re-renders the UI that reports the state.
+  const [accessDenied, setAccessDeniedState] = useState(isAccessDenied);
   const [isReady, setIsReady] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState(null);
@@ -52,7 +56,9 @@ export function SpotifyAuthProvider({ children }) {
   useEffect(() => {
     let active = true;
     const unsubscribe = subscribeToSpotifySession((next) => {
-      if (active) setSession(next ? { ...next } : null);
+      if (!active) return;
+      setSession(next ? { ...next } : null);
+      setAccessDeniedState(isAccessDenied());
     });
 
     hydrateSpotifySession().finally(() => {
@@ -147,13 +153,28 @@ export function SpotifyAuthProvider({ children }) {
       signIn,
       signOut,
       redirectUri,
+      // Signed in and actually able to read the catalog. The two come apart
+      // when the account isn't on the app's Development Mode allowlist.
+      isAuthorized: Boolean(session?.accessToken) && !accessDenied,
+      accessDenied,
       canSignIn: Boolean(clientId) && Boolean(request),
       isConfigured: Boolean(clientId),
       // True when the client ID came from Settings rather than the build, so
       // the UI can offer to forget it.
       usingSavedClientId: !BUILD_SPOTIFY_CLIENT_ID && Boolean(clientId),
     }),
-    [session, isReady, isSigningIn, error, signIn, signOut, redirectUri, request, clientId],
+    [
+      session,
+      accessDenied,
+      isReady,
+      isSigningIn,
+      error,
+      signIn,
+      signOut,
+      redirectUri,
+      request,
+      clientId,
+    ],
   );
 
   return <SpotifyAuthContext.Provider value={value}>{children}</SpotifyAuthContext.Provider>;

@@ -7,6 +7,7 @@ import {
   isSignedIn,
   needsRefresh,
   saveSpotifySession,
+  setAccessDenied,
 } from '../storage/spotifySession';
 
 /**
@@ -37,6 +38,21 @@ export class SpotifyAuthRequiredError extends SpotifyError {
   constructor(message = 'Sign in with Spotify to search the catalog.') {
     super(message, { retryable: false });
     this.name = 'SpotifyAuthRequiredError';
+  }
+}
+
+/**
+ * Raised when Spotify accepts the token but refuses the account behind it.
+ *
+ * Deliberately *not* an auth error: the sign-in worked and the token is valid,
+ * so signing in again with the same account changes nothing. Clearing the
+ * session here would be actively misleading — it would present a "sign in"
+ * button as the fix for a problem that only the dashboard can fix.
+ */
+export class SpotifyAccessError extends SpotifyError {
+  constructor(message) {
+    super(message, { status: 403, retryable: false });
+    this.name = 'SpotifyAccessError';
   }
 }
 
@@ -125,6 +141,28 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
     throw new SpotifyError('Spotify rate limit reached. Try again shortly.', { status: 429 });
   }
 
+  /*
+   * 403 on a valid token means the *account* isn't allowed to use this app.
+   *
+   * Every Spotify app starts in Development Mode, where only accounts listed
+   * under User Management in the dashboard may call the API — everyone else
+   * gets 403 no matter how correctly they signed in. It is the single most
+   * confusing state Crate can be in, because the app is genuinely signed in
+   * and says so, while every request fails. Spotify's own wording ("the user
+   * may not be registered") does not make the remedy obvious, so spell it out.
+   */
+  if (response.status === 403) {
+    const detail = await readErrorMessage(response);
+    setAccessDenied(true);
+    throw new SpotifyAccessError(
+      'Signed in, but Spotify refused the request.\n\n' +
+        'New Spotify apps run in Development Mode, where only accounts added under ' +
+        'User Management can use them. Add the account you signed in with at ' +
+        'developer.spotify.com/dashboard → your app → User Management, then try again.' +
+        (detail ? `\n\nSpotify said: ${detail}` : ''),
+    );
+  }
+
   if (!response.ok) {
     const detail = await readErrorMessage(response);
 
@@ -145,6 +183,10 @@ async function apiGet(path, { retryOnAuthFailure = true } = {}) {
       { status: response.status, retryable: response.status >= 500 },
     );
   }
+
+  // Anything that succeeds clears a previous refusal — this is how the UI
+  // recovers once the account is added in the dashboard, with no sign-out.
+  setAccessDenied(false);
 
   return response.json();
 }

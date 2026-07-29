@@ -18,6 +18,33 @@ let cache = null; // { accessToken, refreshToken, expiresAt, scope }
 let hydrated = false;
 const listeners = new Set();
 
+/**
+ * Whether Spotify is refusing this account (403), as opposed to refusing the
+ * token (401).
+ *
+ * Kept apart from the session because the session is not the problem: the
+ * sign-in worked and the token is valid, it is the *account* that isn't on the
+ * app's Development Mode allowlist. Without this the UI can only say "signed
+ * in" or "signed out", and the first is what makes the failure baffling —
+ * everything looks connected and nothing works.
+ *
+ * Deliberately not persisted: it is a fact about the server's current opinion,
+ * and it should be re-learned on the next request rather than survive a
+ * reload and outlive the dashboard change that fixed it.
+ */
+let accessDenied = false;
+
+export function setAccessDenied(value) {
+  const next = Boolean(value);
+  if (accessDenied === next) return;
+  accessDenied = next;
+  notify();
+}
+
+export function isAccessDenied() {
+  return accessDenied;
+}
+
 function notify() {
   for (const listener of listeners) listener(cache);
 }
@@ -57,6 +84,10 @@ export function needsRefresh() {
  * @param {{accessToken: string, refreshToken?: string, expiresIn?: number, scope?: string}} token
  */
 export async function saveSpotifySession(token) {
+  // A fresh token may belong to a different account, so the old verdict no
+  // longer applies — let the next request establish it.
+  accessDenied = false;
+
   cache = {
     accessToken: token.accessToken,
     // Spotify omits refresh_token on some refresh responses; keep the old one
@@ -78,6 +109,7 @@ export async function saveSpotifySession(token) {
 
 export async function clearSpotifySession() {
   cache = null;
+  accessDenied = false;
   hydrated = true;
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);

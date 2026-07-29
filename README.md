@@ -48,10 +48,18 @@ If a build does go out without one, it isn't a dead end: Settings offers a field
 the client ID, saved on that device. Handy for anyone forking this without CI, and the
 reason a forgotten variable is an annoyance rather than a broken app.
 
-> **Development Mode caps you at 25 users.** New Spotify apps only allow 25 accounts,
-> each added by email in the dashboard. Going beyond that needs a **quota extension
-> request**, which Spotify reviews. If you intend to share this publicly, start that
-> request early — it is the long pole and it can be refused.
+4. **Add yourself under User Management.** In the dashboard: your app → **User Management**
+   → add the name and email of the Spotify account you'll sign in with.
+
+> **Step 4 is not optional, and skipping it looks like a bug.** A new app is in
+> Development Mode, where *only* accounts on that list may call the API. Any other account
+> signs in perfectly and then gets **403 on every request** — the app says "Signed in"
+> while nothing works. Crate names this state explicitly ("Signed in · not allowed") rather
+> than showing a bare 403, but the fix is only ever in the dashboard.
+>
+> The same list caps you at **25 users**. Going beyond that needs a **quota extension
+> request**, which Spotify reviews and can refuse. If you intend to share this publicly,
+> start that request early — it is the long pole.
 
 ### Claude — the user's own key
 
@@ -404,8 +412,9 @@ Anything with vision and structured-output support will work.
 | --- | --- |
 | "Add your API keys" | No credentials saved yet — open Settings. |
 | "Claude rejected your API key" | Bad or revoked key, or the account has no credit. |
-| "Spotify rejected your credentials" | Client ID/secret mismatch — re-copy both from the dashboard. |
-| Preview button always disabled | Spotify isn't returning preview clips for your app (see above). |
+| **"Signed in, but Spotify refused the request" (403)** | **The most confusing failure Crate has, and it isn't a sign-in bug.** Your app is in Development Mode, so only accounts listed under **User Management** in the dashboard may call the API. Every other account gets 403 no matter how correctly it signed in — including, often, your own. Add the account at developer.spotify.com/dashboard → your app → **User Management**. Signing out and back in changes nothing. Settings shows this as "Signed in · not allowed". |
+| "Spotify rejected the access token" | The token was refused rather than the account — sign in again. |
+| No preview controls anywhere | Expected on any Spotify app made after 27 Nov 2024 (see above). Not a bug, and not something the app can restore. |
 | Nothing gets recognized | Fill more of the frame with the sleeve, avoid glare, hold steady. |
 | Camera black in the iOS simulator | Expected. Use a physical device. |
 | Deployed site is blank | `.nojekyll` missing from the build, or Pages source isn't set to GitHub Actions. |
