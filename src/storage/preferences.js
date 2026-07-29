@@ -38,9 +38,18 @@ function sanitize(saved) {
   return {
     view: VIEW_MODES.includes(saved?.view) ? saved.view : DEFAULTS.view,
     sort: SORT_MODES.some((mode) => mode.id === saved?.sort) ? saved.sort : DEFAULTS.sort,
-    // Free text, so it gets length and type validation rather than an enum
-    // check. Empty is valid and means "no name yet".
-    name: typeof saved?.name === 'string' ? saved.name.trim().slice(0, MAX_NAME) : DEFAULTS.name,
+    /*
+     * Free text, so length and type validation rather than an enum check —
+     * and deliberately NOT trimmed.
+     *
+     * The name field writes on every keystroke and reads its value straight
+     * back from here, so trimming on write ate the space the moment it was
+     * typed: a trailing space was removed before it could round-trip to the
+     * input, making "Marco's Collection" impossible to type. Whitespace is
+     * trimmed where the name is displayed instead, which is the only place it
+     * actually matters.
+     */
+    name: typeof saved?.name === 'string' ? saved.name.slice(0, MAX_NAME) : DEFAULTS.name,
   };
 }
 

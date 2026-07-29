@@ -268,7 +268,8 @@ your app.
 | Scan → add | The ◎ in the search bar dismisses the modal and opens the Scanner in one step |
 | Sleeve Spotify lacks | Scan result offers "Add by hand", prefilled with what Claude read |
 | Track tap | Opens that track in Spotify — not the album |
-| Collection name | Set it in Settings; the shelf title updates and survives a reload |
+| Collection name | Set it in Settings; spaces type normally, the title updates live and survives a reload |
+| A long name | "Marco's Collection" renders at full size; longer names step down, then wrap to two lines rather than ellipsising |
 | Sort by artist | Sticky A–Z headers; **The** Beatles under B, not T |
 | Add by hand | Search something Spotify lacks → "Add by hand" → appears with a ✎ badge |
 | Edit a manual record | Open it, change the year, go back — the detail screen reflects the edit |

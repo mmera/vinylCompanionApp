@@ -35,6 +35,25 @@ const SEGMENTS = [
   { id: WISHLIST, label: 'Wishlist' },
 ];
 
+/**
+ * Shrink the shelf title as the name grows.
+ *
+ * "Collection" is ten characters and the display size was chosen for it, but
+ * most names end in "…'s Collection" — eighteen before anyone has been
+ * imaginative. Sharing the row with + Add and the gear left the title about
+ * 240pt, where eighteen characters already overflowed at 30pt; on its own row
+ * it has ~342pt and fits at full size. So the title now owns its row, and
+ * these steps only handle genuinely long names, with two lines beyond that
+ * rather than ellipsising something the owner chose.
+ */
+function titleSize(name) {
+  const { length } = name;
+  if (length <= 20) return 30;
+  if (length <= 26) return 26;
+  if (length <= 34) return 22;
+  return 20;
+}
+
 /** The shelf: every record you own. */
 export function CollectionScreen({ navigation }) {
   const { records, isLoading, error, refresh } = useCollection();
@@ -76,6 +95,9 @@ export function CollectionScreen({ navigation }) {
    * looks exactly like the version without it. A control you cannot find is
    * worth less than one you occasionally don't need.
    */
+  // Trimmed here rather than on save — see the note in storage/preferences.js.
+  const shelfName = name.trim() || 'Collection';
+
   const showControls = visible.length > 0;
   const isFiltered = query.trim().length > 0;
   const countLabel = `${visible.length} ${visible.length === 1 ? 'record' : 'records'}`;
@@ -140,12 +162,51 @@ export function CollectionScreen({ navigation }) {
         list re-renders, which is every keystroke.
       */}
       <View style={styles.header}>
+        {/*
+          The title owns its row. The wishlist is a view of the same shelf, so
+          it keeps the name and the segmented control below says which half of
+          it you're looking at.
+        */}
+        <Text style={[styles.title, { fontSize: titleSize(shelfName) }]} numberOfLines={2}>
+          {shelfName}
+        </Text>
+
+        {/*
+          Segments and actions share the next row: the segmented control leaves
+          plenty of width beside it, and moving the actions off the title row is
+          what lets a name like "Marco's Collection" render at full size.
+          Only worth showing the segments once there is something in the other
+          list — before that it is a control with one meaningful position.
+        */}
         <View style={styles.headerRow}>
-          {/* The wishlist is a view of the same shelf, so it keeps the name
-              and the segmented control says which half you're looking at. */}
-          <Text style={styles.title} numberOfLines={1}>
-            {name || 'Collection'}
-          </Text>
+          {records.length > 0 ? (
+            <View style={styles.segments}>
+              {SEGMENTS.map((segment) => {
+                const active = segment.id === status;
+                return (
+                  <Pressable
+                    key={segment.id}
+                    onPress={() => setStatus(segment.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={({ pressed }) => [
+                      styles.segment,
+                      active && styles.segmentActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                      {segment.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : (
+            // Keeps the actions right-aligned when there are no segments yet.
+            <View />
+          )}
+
           <View style={styles.headerActions}>
             <Pressable
               onPress={() => navigation.navigate('Search')}
@@ -167,35 +228,6 @@ export function CollectionScreen({ navigation }) {
             </Pressable>
           </View>
         </View>
-
-        {/*
-          Only worth showing once there is something in the other list —
-          before that it is a control with one meaningful position.
-        */}
-        {records.length > 0 ? (
-          <View style={styles.segments}>
-            {SEGMENTS.map((segment) => {
-              const active = segment.id === status;
-              return (
-                <Pressable
-                  key={segment.id}
-                  onPress={() => setStatus(segment.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  style={({ pressed }) => [
-                    styles.segment,
-                    active && styles.segmentActive,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                    {segment.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
 
         <Text style={styles.count}>
           {isFiltered ? `${total} of ${countLabel}` : countLabel}
@@ -375,11 +407,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
   title: {
     ...type.display,
-    flexShrink: 1,
-    marginRight: spacing.sm,
+    // fontSize comes from titleSize(); lineHeight must scale with it or a
+    // two-line name overlaps itself, so leave it unset.
   },
   headerActions: {
     flexDirection: 'row',
@@ -400,9 +433,6 @@ const styles = StyleSheet.create({
   },
   segments: {
     flexDirection: 'row',
-    alignSelf: 'flex-start',
-    marginTop: spacing.sm,
-    marginBottom: spacing.xs,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
