@@ -22,6 +22,21 @@ const SCAN_INTERVAL_MS = 1800;
 const FRAME_WIDTH = 768;
 const BACKOFF_MS = 6000;
 
+/**
+ * The video element can genuinely lag the mount by a frame or two, so a single
+ * "not ready" is not worth reporting. Several in a row means no stream is
+ * coming at all — typically a camera the browser refused while still telling
+ * expo-camera it was ready.
+ */
+const CAMERA_NOT_READY = 'ERR_CAMERA_NOT_READY';
+const MAX_CAMERA_STALLS = 4;
+const CAMERA_STALLED_MESSAGE =
+  'The camera never started sending frames. Check that this site is allowed to use the camera, then reload the page.';
+
+function isCameraNotReady(error) {
+  return error?.code === CAMERA_NOT_READY;
+}
+
 export const ScanState = {
   IDLE: 'idle',
   SCANNING: 'scanning',
@@ -50,6 +65,8 @@ export function useAlbumScanner({ cameraRef, enabled }) {
   const abortRef = useRef(null);
   // Suppress the "not recognized" flash until we've actually failed a round.
   const missesRef = useRef(0);
+  // Consecutive captures that found no frame to capture.
+  const cameraStallsRef = useRef(0);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -87,6 +104,9 @@ export function useAlbumScanner({ cameraRef, enabled }) {
   const runOnce = useCallback(async () => {
     const base64 = await captureFrame();
     if (!base64 || cancelledRef.current) return { kind: 'skip' };
+
+    // A frame arrived, so whatever the camera was doing before, it works now.
+    cameraStallsRef.current = 0;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -131,6 +151,7 @@ export function useAlbumScanner({ cameraRef, enabled }) {
 
     cancelledRef.current = false;
     missesRef.current = 0;
+    cameraStallsRef.current = 0;
 
     const loop = async () => {
       if (cancelledRef.current || runningRef.current) return;
@@ -162,16 +183,37 @@ export function useAlbumScanner({ cameraRef, enabled }) {
       } catch (scanError) {
         if (cancelledRef.current || scanError?.name === 'AbortError') return;
 
-        setError(describeClaudeError(scanError));
+        /*
+         * A camera failure is not a Claude failure, and describing it as one
+         * produced the worst message in the app: the raw internal string
+         * "HTMLVideoElement does not have enough camera data to construct an
+         * image yet", shown beside a Try again button that re-ran the same
+         * doomed capture forever.
+         */
+        if (isCameraNotReady(scanError)) {
+          cameraStallsRef.current += 1;
 
-        if (!isRetryableClaudeError(scanError)) {
+          if (cameraStallsRef.current >= MAX_CAMERA_STALLS) {
+            setError(CAMERA_STALLED_MESSAGE);
+            setState(ScanState.ERROR);
+            return; // No amount of retrying conjures a stream.
+          }
+
+          // Early on this is just the video buffering — say nothing and retry.
+          setError(null);
+          setState(ScanState.SCANNING);
+        } else {
+          setError(describeClaudeError(scanError));
+
+          if (!isRetryableClaudeError(scanError)) {
+            setState(ScanState.ERROR);
+            return; // Configuration problem — retrying would just burn requests.
+          }
+
+          // Transient (rate limit, network, 5xx): ease off before trying again.
           setState(ScanState.ERROR);
-          return; // Configuration problem — retrying would just burn requests.
+          delay = BACKOFF_MS;
         }
-
-        // Transient (rate limit, network, 5xx): ease off before trying again.
-        setState(ScanState.ERROR);
-        delay = BACKOFF_MS;
       } finally {
         runningRef.current = false;
         abortRef.current = null;
@@ -198,6 +240,7 @@ export function useAlbumScanner({ cameraRef, enabled }) {
     setResult(null);
     setError(null);
     missesRef.current = 0;
+    cameraStallsRef.current = 0;
     setState(enabled ? ScanState.SCANNING : ScanState.IDLE);
     setRunToken((token) => token + 1);
   }, [enabled]);

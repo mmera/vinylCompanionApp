@@ -420,6 +420,7 @@ Anything with vision and structured-output support will work.
 | Deployed site is blank | `.nojekyll` missing from the build, or Pages source isn't set to GitHub Actions. |
 | Site loads at an unexpected domain | A custom domain is set on this repo's Pages settings, or inherited from your `<user>.github.io` user site. See [Which URL does it land on?](#which-url-does-it-land-on). |
 | "Camera needs a secure connection" | Page loaded over HTTP. Tick **Settings → Pages → Enforce HTTPS** once the certificate is issued. |
+| "Camera is blocked" | You denied the camera, and browsers remember that per site — the page cannot re-prompt. Lift it in browser settings (Safari: **aA** → Website Settings → Camera; Chrome/Edge: the icon left of the address → Camera), then **reload**. The setting doesn't apply to the page already open. |
 | Keys keep needing re-entry | Storage is per-origin — check the address matches what Settings reports. If it does, the browser is evicting storage: install to the Home Screen to get persistent storage granted. |
 | Deploy fails on the audit step | A credential reached the bundle — check for a `.env` in CI. Working as intended. |
 | PWA won't install | Needs HTTPS, a reachable manifest, and a registered service worker. Check the browser console. |

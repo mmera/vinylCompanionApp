@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,11 @@ import { ScanState, useAlbumScanner } from '../hooks/useAlbumScanner';
 import { useCredentials } from '../context/CredentialsContext';
 import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
+import {
+  CAMERA_RECOVERY_STEPS,
+  describeCameraError,
+  isPermissionBlocked,
+} from '../utils/cameraErrors';
 import { httpsUrl, isSecureContext } from '../utils/secureContext';
 import { colors, radius, spacing, type } from '../theme';
 
@@ -60,7 +65,25 @@ export function ScannerScreen({ navigation }) {
    * refusal surfaces through `onMountError` instead, which we handle below.
    */
   const usesNativePermissionFlow = Platform.OS !== 'web';
-  const [mountError, setMountError] = useState(null);
+  const [mountError, setMountError] = useState(null); // { message, blocked }
+
+  /*
+   * expo-camera's web stream hook calls `onMountError` and then calls
+   * `onCameraReady()` anyway — unconditionally, in the same tick, even when
+   * getUserMedia returned nothing (`resumeAsync` in useWebCameraStream, which
+   * only skips the ready callback when the new and old streams match, and
+   * `compareStreams(null, null)` is false).
+   *
+   * So "ready" arrives immediately after "failed". Clearing the error there
+   * meant a denied camera looked live: the scan loop started against a video
+   * element with no stream and every frame died with ERR_CAMERA_NOT_READY.
+   * The ref lets the ready callback see a failure reported microseconds
+   * earlier, which state set in the same tick cannot.
+   */
+  const mountErrorRef = useRef(null);
+  // Bumped to force a fresh CameraView, which is the only way to make the web
+  // implementation call getUserMedia again — its effect keys on facing alone.
+  const [cameraKey, setCameraKey] = useState(0);
 
   const permissionSettled = usesNativePermissionFlow ? permission?.granted === true : !mountError;
 
@@ -133,18 +156,22 @@ export function ScannerScreen({ navigation }) {
     if (!permission.granted) {
       return (
         <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
+          {/*
+            Once iOS has been told no, the app cannot ask again — so offer the
+            one thing that works, which is a jump straight to Crate's own page
+            in Settings, rather than a sentence telling the user to go find it.
+          */}
           <EmptyState
             mark="◉"
             title="Camera access needed"
-            message="Crate identifies album covers straight from the camera. Nothing is recorded or stored — frames are analysed and discarded."
-            actionLabel={permission.canAskAgain ? 'Allow camera' : undefined}
-            onAction={permission.canAskAgain ? requestPermission : undefined}
+            message={
+              permission.canAskAgain
+                ? 'Crate identifies album covers straight from the camera. Nothing is recorded or stored — frames are analysed and discarded.'
+                : 'Camera access is off for Crate, and iOS only lets you turn it back on from Settings.'
+            }
+            actionLabel={permission.canAskAgain ? 'Allow camera' : 'Open Settings'}
+            onAction={permission.canAskAgain ? requestPermission : Linking.openSettings}
           />
-          {!permission.canAskAgain ? (
-            <Text style={styles.settingsHint}>
-              Enable camera access for Crate in your device Settings.
-            </Text>
-          ) : null}
         </SafeAreaView>
       );
     }
@@ -152,17 +179,39 @@ export function ScannerScreen({ navigation }) {
 
   // Web: we only learn the camera is unavailable when mounting fails.
   if (mountError) {
+    /*
+     * A blocked camera and a dismissed prompt need different offers.
+     *
+     * Dismissing the prompt leaves the browser willing to ask again, so
+     * remounting the camera genuinely re-prompts. An outright block is
+     * remembered per origin and getUserMedia then rejects without prompting —
+     * retrying can only fail, so the honest action is a reload, to be used
+     * after the setting is changed.
+     */
     return (
       <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
         <EmptyState
           mark="◉"
-          title="Camera unavailable"
-          message={`Crate couldn't start the camera. If you dismissed the permission prompt, allow camera access for this site and try again.\n\n${mountError}`}
-          actionLabel="Try again"
+          title={mountError.blocked ? 'Camera is blocked' : 'Camera unavailable'}
+          message={
+            mountError.blocked
+              ? `${mountError.message}\n\nBrowsers remember this per site, so Crate can’t ask again — it has to be changed in your browser, then reloaded.\n\n${CAMERA_RECOVERY_STEPS}`
+              : `${mountError.message}\n\nIf you dismissed the permission prompt, try again and allow it.`
+          }
+          actionLabel={mountError.blocked ? 'Reload page' : 'Try again'}
           onAction={() => {
+            if (mountError.blocked) {
+              reloadPage();
+              return;
+            }
+            // Clear both, then remount so getUserMedia actually runs again.
+            mountErrorRef.current = null;
             setMountError(null);
             setIsCameraReady(false);
+            setCameraKey((key) => key + 1);
           }}
+          secondaryActionLabel={mountError.blocked ? undefined : 'Reload page'}
+          onSecondaryAction={mountError.blocked ? undefined : reloadPage}
         />
       </SafeAreaView>
     );
@@ -174,18 +223,28 @@ export function ScannerScreen({ navigation }) {
     <View style={styles.fill}>
       {isFocused ? (
         <CameraView
+          key={cameraKey}
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="back"
           mode="picture"
           animateShutter={false}
           onCameraReady={() => {
+            // Only trustworthy if mounting didn't just fail — see above.
+            if (mountErrorRef.current) return;
             setIsCameraReady(true);
-            setMountError(null);
           }}
           onMountError={(event) => {
+            // The DOMException is under `nativeEvent`; `event.message` is
+            // undefined, which is how the real reason used to be lost.
+            const cause = event?.nativeEvent ?? event;
+            const failure = {
+              message: describeCameraError(cause),
+              blocked: isPermissionBlocked(cause),
+            };
+            mountErrorRef.current = failure;
             setIsCameraReady(false);
-            setMountError(event?.message || 'The browser refused access to the camera.');
+            setMountError(failure);
           }}
         />
       ) : (
@@ -217,6 +276,15 @@ export function ScannerScreen({ navigation }) {
       </SafeAreaView>
     </View>
   );
+}
+
+/**
+ * Changing a site's camera setting doesn't affect the running page — Chrome
+ * and Safari only apply it on the next load, so the reload is part of the fix
+ * rather than a suggestion to try turning it off and on again.
+ */
+function reloadPage() {
+  if (typeof window !== 'undefined' && window.location?.reload) window.location.reload();
 }
 
 /** Small live-status chip so it's always clear whether the loop is running. */
@@ -315,11 +383,5 @@ const styles = StyleSheet.create({
   errorAction: {
     alignSelf: 'center',
     minWidth: 180,
-  },
-  settingsHint: {
-    ...type.caption,
-    textAlign: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
   },
 });
