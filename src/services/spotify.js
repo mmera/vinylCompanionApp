@@ -205,6 +205,9 @@ function normalizeAlbum(album) {
     id: album.id,
     name: album.name,
     artist: album.artists?.map((a) => a.name).join(', ') || 'Unknown artist',
+    // Kept because genre lives on the *artist*, not the album — see
+    // `fetchArtistGenres`. The first artist is the credited one.
+    artistId: album.artists?.[0]?.id ?? null,
     year: album.release_date ? String(album.release_date).slice(0, 4) : '',
     imageUrl: pickImage(album.images),
     thumbnailUrl: pickImage(album.images, 300),
@@ -288,6 +291,43 @@ export async function getAlbumTracks(albumId) {
   }
 
   return tracks;
+}
+
+/**
+ * Genres for a set of artists, as `{ artistId: genre|null }`.
+ *
+ * Genre is an *artist* property in Spotify's model. The album object does have
+ * a `genres` field, but the simplified album returned by search omits it
+ * entirely and the full album object has served an empty array for years — so
+ * grouping a shelf by album genre would put every record in one bucket. The
+ * artist's genres are populated and are what "what kind of record is this"
+ * actually means to most people.
+ *
+ * Two consequences worth knowing: the genre describes the artist rather than
+ * the particular album, so a band's early and late work sort together; and
+ * Spotify returns several genres per artist, ordered roughly by prominence, of
+ * which we take the first. "art rock" rather than the full
+ * ["art rock", "permanent wave", "oxford indie"].
+ *
+ * Batched 50 at a time, which is the endpoint's limit.
+ */
+export async function fetchArtistGenres(artistIds) {
+  const unique = [...new Set(artistIds.filter(Boolean))];
+  const genres = {};
+
+  for (let index = 0; index < unique.length; index += 50) {
+    const batch = unique.slice(index, index + 50);
+    const body = await apiGet(`/artists?ids=${batch.join(',')}`);
+
+    for (const artist of body.artists ?? []) {
+      if (!artist?.id) continue;
+      // null rather than undefined: "looked up, has none" is a different fact
+      // from "never looked up", and only the latter is worth retrying.
+      genres[artist.id] = artist.genres?.[0] ?? null;
+    }
+  }
+
+  return genres;
 }
 
 /**

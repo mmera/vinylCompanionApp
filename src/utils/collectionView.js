@@ -68,7 +68,21 @@ export const SORT_MODES = [
   { id: 'artist', label: 'Artist' },
   { id: 'album', label: 'Album' },
   { id: 'year', label: 'Year' },
+  { id: 'genre', label: 'Genre' },
 ];
+
+/**
+ * Spotify writes genres lower case ("art rock"), which looks like a mistake as
+ * a heading. Records with none — manual ones, artists Spotify hasn't tagged —
+ * collect under a single bucket that sorts last.
+ */
+const NO_GENRE = 'No genre';
+
+function genreLabel(record) {
+  const genre = typeof record.genre === 'string' ? record.genre.trim() : '';
+  if (!genre) return NO_GENRE;
+  return genre.replace(/(^|\s)\S/g, (character) => character.toUpperCase());
+}
 
 /**
  * One collator for the whole module. `String.prototype.localeCompare` builds a
@@ -90,6 +104,7 @@ function decorate(record) {
     artistKey: sortKey(record.artist),
     nameKey: sortKey(record.name),
     year: Number.isFinite(year) ? year : null,
+    genre: genreLabel(record),
   };
 }
 
@@ -107,12 +122,24 @@ const SORTERS = {
     if (b.year === null) return -1;
     return b.year - a.year || collator.compare(a.artistKey, b.artistKey);
   },
+  // Alphabetical by genre, ungenred last, then by artist inside each.
+  genre: (a, b) => {
+    if (a.genre !== b.genre) {
+      if (a.genre === NO_GENRE) return 1;
+      if (b.genre === NO_GENRE) return -1;
+      return collator.compare(a.genre, b.genre);
+    }
+    return (
+      collator.compare(a.artistKey, b.artistKey) || collator.compare(a.nameKey, b.nameKey)
+    );
+  },
 };
 
 const HEADINGS = {
   artist: (record) => initial(record.artist),
   album: (record) => initial(record.name),
   year: (record) => decade(record.year),
+  genre: genreLabel,
 };
 
 /** Group a flat sorted list into `[[a, b], [c]]` rows for a fixed-column grid. */

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -86,18 +87,18 @@ export function CollectionScreen({ navigation }) {
     [visible, sort, query, columns],
   );
 
+  // Trimmed here rather than on save — see the note in storage/preferences.js.
+  const shelfName = name.trim() || 'Collection';
+
   /*
-   * Shown as soon as there is anything to organise.
+   * Controls show as soon as there is anything to organise.
    *
-   * These used to appear only past twelve records, on the theory that a search
+   * They used to appear only past twelve records, on the theory that a search
    * box over three of them is furniture. The effect was that nobody knew the
    * feature existed — including while testing it — because a small collection
    * looks exactly like the version without it. A control you cannot find is
    * worth less than one you occasionally don't need.
    */
-  // Trimmed here rather than on save — see the note in storage/preferences.js.
-  const shelfName = name.trim() || 'Collection';
-
   const showControls = visible.length > 0;
   const isFiltered = query.trim().length > 0;
   const countLabel = `${visible.length} ${visible.length === 1 ? 'record' : 'records'}`;
@@ -271,9 +272,14 @@ export function CollectionScreen({ navigation }) {
               </View>
 
               <View style={styles.viewToggle}>
+                {/*
+                  ▦ against ▤ were near-indistinguishable — both a bordered
+                  square with lines in it, differing only in whether the lines
+                  cross. ☰ shares no silhouette with the grid at all.
+                */}
                 {[
                   { id: 'grid', mark: '▦', label: 'Grid view' },
-                  { id: 'list', mark: '▤', label: 'List view' },
+                  { id: 'list', mark: '☰', label: 'List view' },
                 ].map((mode) => {
                   const active = view === mode.id;
                   return (
@@ -298,7 +304,17 @@ export function CollectionScreen({ navigation }) {
               </View>
             </View>
 
-            <View style={styles.sortRow}>
+            {/*
+              Five pills no longer fit a narrow phone (~367pt of content in
+              ~342pt), so the row scrolls rather than wrapping to a second line
+              or squeezing the labels.
+            */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.sortRow}
+            >
               {SORT_MODES.map((mode) => {
                 const active = mode.id === sort;
                 return (
@@ -320,7 +336,7 @@ export function CollectionScreen({ navigation }) {
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
         ) : null}
       </View>
@@ -515,6 +531,8 @@ const styles = StyleSheet.create({
   sortRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+    // Lets the last pill clear the screen edge when scrolled.
+    paddingRight: spacing.lg,
   },
   sortPill: {
     paddingHorizontal: spacing.md,
