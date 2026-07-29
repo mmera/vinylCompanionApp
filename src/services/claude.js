@@ -57,7 +57,8 @@ const IDENTIFICATION_SCHEMA = {
     identified: {
       type: 'boolean',
       description:
-        'True only if a real album cover is clearly visible AND you recognize which album it is.',
+        'True if a real album cover is visible — even partly, at an angle, or under a ' +
+        'finger — AND you recognize which album it is.',
     },
     artist: {
       type: 'string',
@@ -86,14 +87,21 @@ const IDENTIFICATION_SCHEMA = {
 const SYSTEM_PROMPT = [
   'You identify vinyl record album covers from a live camera feed.',
   '',
-  'The image is a single frame from a phone camera pointed at a record sleeve. It may be',
-  'blurry, tilted, partially out of frame, glare-covered, or show no album at all.',
+  'The image is a single frame from a phone camera pointed at a record sleeve. The sleeve',
+  'is usually held in one hand at arm\'s length, so expect fingers or a thumb over the',
+  'edges, a strong tilt, keystone perspective, motion blur, glare across the gloss, and',
+  'often only part of the sleeve inside the frame. None of that makes a cover',
+  'unidentifiable — it is simply what a hand-held record looks like.',
   '',
   'Rules:',
-  '- Set identified=true only when you can see an album cover AND you know which album it is.',
+  '- Set identified=true when you can see enough of an album cover to know which album it',
+  '  is. The whole sleeve does not need to be in frame: a corner with distinctive artwork,',
+  '  or a recognizable fragment, is enough when you actually recognize it.',
+  '- Ignore hands, fingers, and whatever is behind the record. Judge only the artwork.',
   '- If the frame shows no album cover, a blurred mess, or a sleeve you cannot place,',
   '  set identified=false and leave artist, album, and year as empty strings.',
   '- Never guess an artist or album to fill the fields. A wrong answer is worse than none.',
+  '  Recognizing a partial cover is not guessing; inventing one from a vague shape is.',
   '- Use the original release year, not a reissue year.',
   '- Report confidence honestly: "low" means you are unsure and the caller should keep scanning.',
 ].join('\n');

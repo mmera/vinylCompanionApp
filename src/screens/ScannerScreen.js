@@ -229,6 +229,14 @@ export function ScannerScreen({ navigation }) {
           facing="back"
           mode="picture"
           animateShutter={false}
+          /*
+           * `autofocus` is deliberately left at its default of "off", which
+           * reads backwards: in expo-camera "off" means focus continuously as
+           * needed, and "on" means focus once and then *lock*. Continuous is
+           * what a scanner wants, and it matters most up close where depth of
+           * field is shallow — setting this to "on" would lock focus and make
+           * a hand-held sleeve blurrier, not sharper.
+           */
           onCameraReady={() => {
             // Only trustworthy if mounting didn't just fail — see above.
             if (mountErrorRef.current) return;
@@ -255,10 +263,27 @@ export function ScannerScreen({ navigation }) {
         <StatusPill state={state} error={error} showResult={Boolean(showResult)} />
       </SafeAreaView>
 
+      {/*
+        Corner brackets spanning nearly the whole frame, not a small box in
+        the middle.
+
+        The capture is never cropped — the entire frame goes to Claude — so a
+        260pt reticle on a ~390pt screen was asking people to fit a 12" sleeve
+        into two-thirds of the frame width. That is about 13" away rather than
+        the 8" the capture actually needs, and centring a record inside a small
+        square while holding both it and the phone is what drives people to put
+        the sleeve down on a table. The guide now shows what is really being
+        looked at, which is all of it.
+      */}
       {!showResult ? (
         <View style={styles.reticleWrap} pointerEvents="none">
-          <View style={styles.reticle} />
-          <Text style={styles.reticleHint}>Point at an album cover</Text>
+          <View style={styles.frameGuide}>
+            <View style={[styles.corner, styles.cornerTopLeft]} />
+            <View style={[styles.corner, styles.cornerTopRight]} />
+            <View style={[styles.corner, styles.cornerBottomLeft]} />
+            <View style={[styles.corner, styles.cornerBottomRight]} />
+          </View>
+          <Text style={styles.reticleHint}>Hold it close — filling the frame is good</Text>
         </View>
       ) : null}
 
@@ -351,16 +376,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
   },
-  reticle: {
-    width: 260,
-    height: 260,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
+  // Square, because sleeves are — but as wide as the frame allows.
+  frameGuide: {
+    width: '88%',
+    maxWidth: 460,
+    aspectRatio: 1,
+  },
+  corner: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
+    borderColor: 'rgba(255,255,255,0.75)',
+  },
+  cornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: radius.sm,
+  },
+  cornerTopRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: radius.sm,
+  },
+  cornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: radius.sm,
+  },
+  cornerBottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: radius.sm,
   },
   reticleHint: {
     ...type.label,
     color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
   },
   resultAnchor: {
     position: 'absolute',

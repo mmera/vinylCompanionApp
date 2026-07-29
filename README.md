@@ -293,6 +293,20 @@ model returns exactly `{ identified, artist, album, year, confidence }` — no p
 parse. Thinking is disabled at `low` effort: identifying a cover is perception, not
 reasoning, and the loop is latency-sensitive.
 
+**The frame is never cropped** — all of it goes to the model. The on-screen guide is
+corner brackets spanning nearly the whole frame for exactly that reason. It used to be a
+260pt square in the middle of a ~390pt screen, which asked people to fit a 12" sleeve into
+two-thirds of the frame width: about 13" away rather than the 8" the capture actually
+needs. Combined with centring a record inside a small box while holding both it and the
+phone, the practical effect was that people put the sleeve down on a table to scan it. A
+guide that doesn't match what's captured is worse than no guide.
+
+The prompt is written for that hand-held reality too: fingers over the edges, keystone
+perspective, glare on the gloss, and only part of the sleeve in frame are all normal, and
+a partial cover is explicitly identifiable rather than a reason to return `identified:
+false`. The one thing it must not do is invent an album from a vague shape, so the
+distinction it draws is between *recognizing a fragment* and *guessing*.
+
 The loop is self-scheduling rather than an interval, so the next capture only starts once
 the previous round trip settles and requests can never stack. It backs off to 6 seconds on
 a rate limit, and stops with a message on a bad key rather than burning requests.
@@ -415,7 +429,7 @@ Anything with vision and structured-output support will work.
 | **"Signed in, but Spotify refused the request" (403)** | **The most confusing failure Crate has, and it isn't a sign-in bug.** Your app is in Development Mode, so only accounts listed under **User Management** in the dashboard may call the API. Every other account gets 403 no matter how correctly it signed in — including, often, your own. Add the account at developer.spotify.com/dashboard → your app → **User Management**. Signing out and back in changes nothing. Settings shows this as "Signed in · not allowed". |
 | "Spotify rejected the access token" | The token was refused rather than the account — sign in again. |
 | No preview controls anywhere | Expected on any Spotify app made after 27 Nov 2024 (see above). Not a bug, and not something the app can restore. |
-| Nothing gets recognized | Fill more of the frame with the sleeve, avoid glare, hold steady. |
+| Nothing gets recognized | Hold the sleeve closer — filling the frame is correct, and the whole sleeve doesn't need to be in it. Avoid glare, hold steady. |
 | Camera black in the iOS simulator | Expected. Use a physical device. |
 | Deployed site is blank | `.nojekyll` missing from the build, or Pages source isn't set to GitHub Actions. |
 | Site loads at an unexpected domain | A custom domain is set on this repo's Pages settings, or inherited from your `<user>.github.io` user site. See [Which URL does it land on?](#which-url-does-it-land-on). |
