@@ -40,9 +40,26 @@ export class StorageError extends Error {
  */
 export const MANUAL_ID_PREFIX = 'manual:';
 
+/**
+ * The ID is the single source of truth for whether a record is manual.
+ *
+ * `source` also records 'manual', but it is provenance metadata alongside
+ * 'scan' and 'search' — treating either as sufficient would leave two facts
+ * that nothing keeps in step, and only the ID is available to a caller holding
+ * an ID and nothing else.
+ */
+export function isManualId(id) {
+  return String(id ?? '').startsWith(MANUAL_ID_PREFIX);
+}
+
 export function isManualRecord(record) {
-  if (!record) return false;
-  return record.source === 'manual' || String(record.id ?? '').startsWith(MANUAL_ID_PREFIX);
+  return isManualId(record?.id);
+}
+
+/** Accessible name for a record, wherever it is rendered. */
+export function recordLabel(record) {
+  const base = `${record.artist}, ${record.name}`;
+  return isManualRecord(record) ? `${base}, added by hand` : base;
 }
 
 function manualId() {
@@ -123,10 +140,10 @@ export async function addToCollection(album, { source = 'scan' } = {}) {
  *
  * @returns {Promise<{records: CollectionRecord[], record: CollectionRecord}>}
  */
-export async function addManualRecord({ artist, name, year, notes } = {}) {
+export async function addManualRecord(fields = {}) {
   const record = {
     id: manualId(),
-    ...normalizeManualFields({ artist, name, year, notes }),
+    ...normalizeManualFields(fields),
     imageUrl: null,
     thumbnailUrl: null,
     // Explicitly null rather than a derived URL: there is no catalog entry

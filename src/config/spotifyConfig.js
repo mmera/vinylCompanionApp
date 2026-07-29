@@ -61,6 +61,3 @@ export function spotifyRedirectUri() {
   return `${window.location.origin}${path}/`;
 }
 
-export function hasSpotifyClientId() {
-  return Boolean(getSpotifyClientId());
-}

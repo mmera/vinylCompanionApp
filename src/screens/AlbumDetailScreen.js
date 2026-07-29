@@ -13,11 +13,11 @@ import { AlbumActions } from '../components/AlbumActions';
 import { AlbumArt } from '../components/AlbumArt';
 import { Button } from '../components/Button';
 import { getAlbum } from '../services/spotify';
-import { isManualRecord } from '../storage/collection';
+import { isManualId, isManualRecord } from '../storage/collection';
 import { useCollection } from '../context/CollectionContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { confirmDestructive } from '../utils/confirm';
-import { colors, radius, spacing, type } from '../theme';
+import { colors, radius, spacing, surfaces, type } from '../theme';
 
 /**
  * Full album view: art, tracklist, and the same preview / open / add actions.
@@ -31,7 +31,7 @@ export function AlbumDetailScreen({ route, navigation }) {
 
   // A manual record is the whole truth about itself — there is no catalog
   // entry to fetch, so the screen renders from what it was handed.
-  const isManual = isManualRecord(seedAlbum) || String(albumId ?? '').startsWith('manual:');
+  const isManual = isManualRecord(seedAlbum) || isManualId(albumId);
 
   const [fetchedAlbum, setFetchedAlbum] = useState(seedAlbum ?? null);
   const [tracks, setTracks] = useState([]);
@@ -54,7 +54,9 @@ export function AlbumDetailScreen({ route, navigation }) {
     () => collection.records.find((record) => record.id === albumId) ?? null,
     [collection.records, albumId],
   );
-  const album = isManual ? (storedRecord ?? seedAlbum ?? null) : fetchedAlbum;
+  // `fetchedAlbum` is seeded from the route params and never refetched for a
+  // manual record, so it is the right fallback when the record is gone.
+  const album = isManual ? (storedRecord ?? fetchedAlbum) : fetchedAlbum;
 
   const artSize = Math.min(width - spacing.lg * 2, 340);
 
@@ -118,15 +120,17 @@ export function AlbumDetailScreen({ route, navigation }) {
     }
   }, [album, collection, navigation, stopPreview]);
 
-  // Only ever a track that actually has a clip — `AlbumActions` renders the
-  // preview button on the strength of this being non-null.
+  /*
+   * The first track with a clip, or null when the album has none.
+   *
+   * Spotify serves previews to apps registered before 2024-11-27 and to no one
+   * since, so in practice this is all-or-nothing per album. `AlbumActions`
+   * renders the preview button on the strength of this being non-null, and the
+   * tracklist drops its play affordances for the same reason — "did we find
+   * one" and "are there any" are the same question, so it is asked once.
+   */
   const headerTrack = useMemo(() => tracks.find((track) => track.previewUrl) ?? null, [tracks]);
-
-  // Spotify serves previews to apps registered before 2024-11-27 and to no one
-  // since, so this is all-or-nothing per album in practice. When it's nothing,
-  // the tracklist drops its play affordances rather than showing a column of
-  // dead rows.
-  const hasPreviews = useMemo(() => tracks.some((track) => track.previewUrl), [tracks]);
+  const hasPreviews = headerTrack !== null;
 
   if (!album && isLoading) {
     return (
@@ -242,21 +246,33 @@ export function AlbumDetailScreen({ route, navigation }) {
 function TrackRow({ track, album, previewable }) {
   const player = usePreviewPlayer();
   const isActive = player.isActive(track.id);
-  const playable = previewable && Boolean(track.previewUrl);
+  const playable = Boolean(track.previewUrl);
 
-  if (!previewable) {
-    return (
-      <View style={styles.track}>
-        <Text style={styles.trackNumber}>{track.trackNumber}</Text>
-        <View style={styles.trackText}>
-          <Text style={styles.trackName} numberOfLines={1}>
-            {track.name}
-          </Text>
-        </View>
-        <Text style={styles.trackDuration}>{formatDuration(track.durationMs)}</Text>
+  const body = (
+    <>
+      <Text style={[styles.trackNumber, isActive && styles.trackActive]}>
+        {isActive && player.isPlaying ? '❚❚' : track.trackNumber}
+      </Text>
+      <View style={styles.trackText}>
+        <Text
+          style={[
+            styles.trackName,
+            isActive && styles.trackActive,
+            // Only dim within an album that has previews, where a missing clip
+            // is a fact about this track. When the album has none, dimming
+            // every row would just look broken.
+            previewable && !playable && styles.trackMuted,
+          ]}
+          numberOfLines={1}
+        >
+          {track.name}
+        </Text>
       </View>
-    );
-  }
+      <Text style={styles.trackDuration}>{formatDuration(track.durationMs)}</Text>
+    </>
+  );
+
+  if (!previewable) return <View style={styles.track}>{body}</View>;
 
   return (
     <Pressable
@@ -274,18 +290,7 @@ function TrackRow({ track, album, previewable }) {
       }
       style={({ pressed }) => [styles.track, pressed && playable && styles.pressed]}
     >
-      <Text style={[styles.trackNumber, isActive && styles.trackActive]}>
-        {isActive && player.isPlaying ? '❚❚' : track.trackNumber}
-      </Text>
-      <View style={styles.trackText}>
-        <Text
-          style={[styles.trackName, isActive && styles.trackActive, !playable && styles.trackMuted]}
-          numberOfLines={1}
-        >
-          {track.name}
-        </Text>
-      </View>
-      <Text style={styles.trackDuration}>{formatDuration(track.durationMs)}</Text>
+      {body}
     </Pressable>
   );
 }
@@ -340,12 +345,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   manualBlock: {
+    ...surfaces.card,
     gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   notes: {
     ...type.body,

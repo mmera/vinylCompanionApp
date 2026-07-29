@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -8,18 +7,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
+import { Field } from '../components/Field';
 import { useCredentials } from '../context/CredentialsContext';
 import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { verifyClaudeCredentials } from '../services/claude';
 import { verifySpotifyConnection } from '../services/spotify';
 import { DEFAULT_CLAUDE_MODEL } from '../storage/credentials';
-import { colors, radius, spacing, type } from '../theme';
+import { colors, radius, spacing, surfaces, type } from '../theme';
 
 /**
  * Key entry.
@@ -269,16 +268,11 @@ function SpotifySection({ spotify, onSaveClientId, onForgetClientId }) {
           Settings.
         </Text>
 
-        <TextInput
+        <Field
+          label="Client ID"
           value={draft}
           onChangeText={setDraft}
-          placeholder="Spotify client ID"
-          placeholderTextColor={colors.textTertiary}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          spellCheck={false}
-          accessibilityLabel="Spotify client ID"
+          placeholder="Paste the client ID from the dashboard"
         />
 
         <Button
@@ -346,7 +340,7 @@ function SpotifySection({ spotify, onSaveClientId, onForgetClientId }) {
 
       {spotify.usingSavedClientId ? (
         <Pressable onPress={onForgetClientId} hitSlop={6}>
-          <Text style={[styles.help, styles.helpLink]}>
+          <Text style={styles.forgetLink}>
             Using the client ID saved on this device — forget it
           </Text>
         </Pressable>
@@ -392,46 +386,6 @@ function StorageNote({ isConfigured, persistence, origin }) {
   );
 }
 
-function Field({ label, value, onChangeText, placeholder, secure, help, onHelpPress }) {
-  const [revealed, setRevealed] = useState(false);
-
-  return (
-    <View style={styles.field}>
-      <View style={styles.fieldHeader}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        {secure && value ? (
-          <Pressable onPress={() => setRevealed((current) => !current)} hitSlop={10}>
-            <Text style={styles.reveal}>{revealed ? 'Hide' : 'Show'}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textTertiary}
-        style={styles.input}
-        autoCapitalize="none"
-        autoCorrect={false}
-        spellCheck={false}
-        secureTextEntry={secure && !revealed}
-        accessibilityLabel={label}
-      />
-
-      {help ? (
-        onHelpPress ? (
-          <Pressable onPress={onHelpPress} hitSlop={6}>
-            <Text style={[styles.help, styles.helpLink]}>{help} ↗</Text>
-          </Pressable>
-        ) : (
-          <Text style={styles.help}>{help}</Text>
-        )
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
@@ -452,9 +406,6 @@ const styles = StyleSheet.create({
     ...type.body,
     lineHeight: 21,
   },
-  field: {
-    gap: spacing.sm,
-  },
   fieldHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -462,27 +413,6 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {
     ...type.label,
-  },
-  reveal: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  input: {
-    height: 48,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.text,
-    fontSize: 15,
-  },
-  help: {
-    ...type.caption,
-  },
-  helpLink: {
-    color: colors.textSecondary,
   },
   status: {
     padding: spacing.md,
@@ -509,12 +439,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   spotifySection: {
+    ...surfaces.card,
     gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+  },
+  forgetLink: {
+    ...type.caption,
+    color: colors.textSecondary,
   },
   spotifyState: {
     ...type.caption,
@@ -530,12 +460,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   storageNote: {
+    ...surfaces.card,
     gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   storageNoteText: {
     ...type.caption,

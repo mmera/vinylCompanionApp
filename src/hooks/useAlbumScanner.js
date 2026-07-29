@@ -30,8 +30,6 @@ const BACKOFF_MS = 6000;
  */
 const CAMERA_NOT_READY = 'ERR_CAMERA_NOT_READY';
 const MAX_CAMERA_STALLS = 4;
-const CAMERA_STALLED_MESSAGE =
-  'The camera never started sending frames. Check that this site is allowed to use the camera, then reload the page.';
 
 function isCameraNotReady(error) {
   return error?.code === CAMERA_NOT_READY;
@@ -43,6 +41,10 @@ export const ScanState = {
   IDENTIFIED: 'identified',
   NOT_RECOGNIZED: 'not_recognized',
   ERROR: 'error',
+  // No frames are arriving. Reported as its own state rather than an error
+  // string so the screen can route it to the camera recovery UI it already
+  // has, instead of the loop inventing a second copy of that advice.
+  CAMERA_UNAVAILABLE: 'camera_unavailable',
 };
 
 /**
@@ -194,8 +196,10 @@ export function useAlbumScanner({ cameraRef, enabled }) {
           cameraStallsRef.current += 1;
 
           if (cameraStallsRef.current >= MAX_CAMERA_STALLS) {
-            setError(CAMERA_STALLED_MESSAGE);
-            setState(ScanState.ERROR);
+            // Classify, don't narrate — the screen owns what to say about a
+            // camera that isn't delivering.
+            setError(null);
+            setState(ScanState.CAMERA_UNAVAILABLE);
             return; // No amount of retrying conjures a stream.
           }
 

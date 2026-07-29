@@ -1,18 +1,11 @@
 import { useCallback, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
+import { Field } from '../components/Field';
 import { useCollection } from '../context/CollectionContext';
-import { colors, radius, spacing, type } from '../theme';
+import { colors, spacing, type } from '../theme';
 
 /**
  * Adding a record Spotify has never heard of.
@@ -122,23 +115,6 @@ export function ManualEntryScreen({ navigation, route }) {
   );
 }
 
-function Field({ label, help, multiline, ...inputProps }) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        {...inputProps}
-        multiline={multiline}
-        placeholderTextColor={colors.textTertiary}
-        style={[styles.input, multiline && styles.inputMultiline]}
-        autoCorrect={false}
-        accessibilityLabel={label}
-      />
-      {help ? <Text style={styles.help}>{help}</Text> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
@@ -152,30 +128,6 @@ const styles = StyleSheet.create({
   intro: {
     ...type.body,
     lineHeight: 21,
-  },
-  field: {
-    gap: spacing.sm,
-  },
-  fieldLabel: {
-    ...type.label,
-  },
-  input: {
-    minHeight: 48,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.text,
-    fontSize: 15,
-  },
-  inputMultiline: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-  },
-  help: {
-    ...type.caption,
   },
   error: {
     ...type.caption,

@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AlbumArt } from './AlbumArt';
-import { isManualRecord } from '../storage/collection';
+import { isManualRecord, recordLabel } from '../storage/collection';
 import { colors, radius, spacing, type } from '../theme';
 
 /** One cell of the collection grid: art, then artist, then title. */
@@ -12,11 +12,7 @@ export function AlbumTile({ album, width, onPress }) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        isManual
-          ? `${album.artist}, ${album.name}, added by hand`
-          : `${album.artist}, ${album.name}`
-      }
+      accessibilityLabel={recordLabel(album)}
       style={({ pressed }) => [{ width }, pressed && styles.pressed]}
     >
       <View>

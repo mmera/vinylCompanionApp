@@ -81,9 +81,6 @@ export function ScannerScreen({ navigation }) {
    * earlier, which state set in the same tick cannot.
    */
   const mountErrorRef = useRef(null);
-  // Bumped to force a fresh CameraView, which is the only way to make the web
-  // implementation call getUserMedia again — its effect keys on facing alone.
-  const [cameraKey, setCameraKey] = useState(0);
 
   const permissionSettled = usesNativePermissionFlow ? permission?.granted === true : !mountError;
 
@@ -177,8 +174,21 @@ export function ScannerScreen({ navigation }) {
     }
   }
 
-  // Web: we only learn the camera is unavailable when mounting fails.
-  if (mountError) {
+  /*
+   * Two ways to learn the camera isn't working, one thing to say about it.
+   *
+   * Mounting can fail outright, or it can "succeed" and then never deliver a
+   * frame — which is what a browser-refused camera looks like from inside the
+   * scan loop. Both end here rather than the loop growing its own copy of the
+   * recovery advice.
+   */
+  const cameraFailure =
+    mountError ??
+    (state === ScanState.CAMERA_UNAVAILABLE
+      ? { message: 'The camera never started sending frames.', blocked: true }
+      : null);
+
+  if (cameraFailure) {
     /*
      * A blocked camera and a dismissed prompt need different offers.
      *
@@ -192,26 +202,28 @@ export function ScannerScreen({ navigation }) {
       <SafeAreaView style={styles.fill} edges={['top', 'bottom']}>
         <EmptyState
           mark="◉"
-          title={mountError.blocked ? 'Camera is blocked' : 'Camera unavailable'}
+          title={cameraFailure.blocked ? 'Camera is blocked' : 'Camera unavailable'}
           message={
-            mountError.blocked
-              ? `${mountError.message}\n\nBrowsers remember this per site, so Crate can’t ask again — it has to be changed in your browser, then reloaded.\n\n${CAMERA_RECOVERY_STEPS}`
-              : `${mountError.message}\n\nIf you dismissed the permission prompt, try again and allow it.`
+            cameraFailure.blocked
+              ? `${cameraFailure.message}\n\nBrowsers remember this per site, so Crate can’t ask again — it has to be changed in your browser, then reloaded.\n\n${CAMERA_RECOVERY_STEPS}`
+              : `${cameraFailure.message}\n\nIf you dismissed the permission prompt, try again and allow it.`
           }
-          actionLabel={mountError.blocked ? 'Reload page' : 'Try again'}
+          actionLabel={cameraFailure.blocked ? 'Reload page' : 'Try again'}
           onAction={() => {
-            if (mountError.blocked) {
+            if (cameraFailure.blocked) {
               reloadPage();
               return;
             }
-            // Clear both, then remount so getUserMedia actually runs again.
+            // Clearing the error swaps this SafeAreaView back for the camera
+            // view, which remounts CameraView and re-runs getUserMedia. The
+            // reset clears any stall verdict the loop reached, which would
+            // otherwise keep this screen up after a successful retry.
             mountErrorRef.current = null;
             setMountError(null);
-            setIsCameraReady(false);
-            setCameraKey((key) => key + 1);
+            reset();
           }}
-          secondaryActionLabel={mountError.blocked ? undefined : 'Reload page'}
-          onSecondaryAction={mountError.blocked ? undefined : reloadPage}
+          secondaryActionLabel={cameraFailure.blocked ? undefined : 'Reload page'}
+          onSecondaryAction={cameraFailure.blocked ? undefined : reloadPage}
         />
       </SafeAreaView>
     );
@@ -223,7 +235,6 @@ export function ScannerScreen({ navigation }) {
     <View style={styles.fill}>
       {isFocused ? (
         <CameraView
-          key={cameraKey}
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="back"

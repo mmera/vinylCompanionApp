@@ -78,6 +78,22 @@ export const type = {
   },
 };
 
+/**
+ * Composite styles used in more than one place.
+ *
+ * Tokens alone weren't enough: the same surface-plus-border card was spelled
+ * out separately on three screens and had already started to drift.
+ */
+export const surfaces = {
+  card: {
+    padding: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+};
+
 export const navigationTheme = {
   dark: true,
   colors: {

@@ -57,6 +57,7 @@ export function CollectionScreen({ navigation }) {
    */
   const showControls = records.length > 0;
   const isFiltered = query.trim().length > 0;
+  const countLabel = `${records.length} ${records.length === 1 ? 'record' : 'records'}`;
 
   const openDetail = useCallback(
     (album) => {
@@ -143,9 +144,7 @@ export function CollectionScreen({ navigation }) {
         </View>
 
         <Text style={styles.count}>
-          {isFiltered
-            ? `${total} of ${records.length} ${records.length === 1 ? 'record' : 'records'}`
-            : `${records.length} ${records.length === 1 ? 'record' : 'records'}`}
+          {isFiltered ? `${total} of ${countLabel}` : countLabel}
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}

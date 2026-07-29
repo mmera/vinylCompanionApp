@@ -70,25 +70,42 @@ export const SORT_MODES = [
   { id: 'year', label: 'Year' },
 ];
 
+/**
+ * One collator for the whole module. `String.prototype.localeCompare` builds a
+ * fresh collator on every call; a comparator is the last place to pay that.
+ */
+const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+
+/**
+ * Sorting works on a decorated copy — `{record, artistKey, nameKey, year}` —
+ * so each record's keys are normalised once rather than once per comparison.
+ * A comparator that calls `sortKey()` does that work O(n log n) times, which
+ * at 1000 records was ~15x more `normalize('NFD')` than needed, on every
+ * keystroke, since the query feeds the same memo.
+ */
+function decorate(record) {
+  const year = Number.parseInt(record.year, 10);
+  return {
+    record,
+    artistKey: sortKey(record.artist),
+    nameKey: sortKey(record.name),
+    year: Number.isFinite(year) ? year : null,
+  };
+}
+
 const SORTERS = {
-  added: (a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0),
+  added: (a, b) => (b.record.addedAt ?? 0) - (a.record.addedAt ?? 0),
   artist: (a, b) =>
-    sortKey(a.artist).localeCompare(sortKey(b.artist)) ||
-    sortKey(a.name).localeCompare(sortKey(b.name)),
+    collator.compare(a.artistKey, b.artistKey) || collator.compare(a.nameKey, b.nameKey),
   album: (a, b) =>
-    sortKey(a.name).localeCompare(sortKey(b.name)) ||
-    sortKey(a.artist).localeCompare(sortKey(b.artist)),
+    collator.compare(a.nameKey, b.nameKey) || collator.compare(a.artistKey, b.artistKey),
   // Newest first, and records with no year sink to the bottom rather than
   // masquerading as year zero.
   year: (a, b) => {
-    const left = Number.parseInt(a.year, 10);
-    const right = Number.parseInt(b.year, 10);
-    const leftOk = Number.isFinite(left);
-    const rightOk = Number.isFinite(right);
-    if (!leftOk && !rightOk) return sortKey(a.artist).localeCompare(sortKey(b.artist));
-    if (!leftOk) return 1;
-    if (!rightOk) return -1;
-    return right - left || sortKey(a.artist).localeCompare(sortKey(b.artist));
+    if (a.year === null && b.year === null) return collator.compare(a.artistKey, b.artistKey);
+    if (a.year === null) return 1;
+    if (b.year === null) return -1;
+    return b.year - a.year || collator.compare(a.artistKey, b.artistKey);
   },
 };
 
@@ -119,35 +136,32 @@ function toRows(records, columns) {
  */
 export function buildSections(records, { sort = 'added', query = '', columns = 2 } = {}) {
   const terms = parseQuery(query);
-  const filtered = terms.length
+  const matching = terms.length
     ? records.filter((record) => matchesQuery(record, terms))
-    : records.slice();
+    : records;
 
-  filtered.sort(SORTERS[sort] ?? SORTERS.added);
+  const decorated = matching.map(decorate);
+  decorated.sort(SORTERS[sort] ?? SORTERS.added);
 
-  const heading = HEADINGS[sort];
-
-  // "Added" is chronological — letter headings over it would be noise, and a
-  // single untitled section keeps the grid flush with the top of the screen.
-  if (!heading) {
-    return {
-      total: filtered.length,
-      sections: filtered.length
-        ? [{ key: 'all', title: null, data: toRows(filtered, columns) }]
-        : [],
-    };
-  }
+  /*
+   * "Added" is chronological, so it has no headings — letter or decade titles
+   * over it would be noise. Rather than special-casing it, its heading is a
+   * function returning null: every record then lands in one untitled run
+   * through the same grouping loop, and an empty collection yields no sections
+   * without a separate branch.
+   */
+  const heading = HEADINGS[sort] ?? (() => null);
 
   const sections = [];
-  for (const record of filtered) {
+  for (const { record } of decorated) {
     const title = heading(record);
     const last = sections[sections.length - 1];
     if (last && last.title === title) last.records.push(record);
-    else sections.push({ key: title, title, records: [record] });
+    else sections.push({ key: title ?? 'all', title, records: [record] });
   }
 
   return {
-    total: filtered.length,
+    total: decorated.length,
     sections: sections.map(({ key, title, records: grouped }) => ({
       key,
       title,

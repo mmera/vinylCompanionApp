@@ -72,7 +72,11 @@ export function AlbumActions({ album, previewTrack, onAdd, isOwned, isAdding }) 
         />
       ) : null}
 
-      {/* A manual record has no catalog entry, so there is nowhere to open. */}
+      {/*
+        Asks whether there is a link to follow, not whether the record is
+        manual — the general question, which happens to answer the specific
+        one. Manual records carry null for both fields.
+      */}
       {album?.spotifyUrl || album?.spotifyUri ? (
         <Button label="Open in Spotify" variant="spotify" onPress={openInSpotify} />
       ) : null}

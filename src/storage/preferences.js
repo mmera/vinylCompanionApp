@@ -12,7 +12,7 @@ import { SORT_MODES } from '../utils/collectionView';
 
 const STORAGE_KEY = 'crate:collection-view:v1';
 
-export const VIEW_MODES = ['grid', 'list'];
+const VIEW_MODES = ['grid', 'list'];
 
 const DEFAULTS = { view: 'grid', sort: 'added' };
 

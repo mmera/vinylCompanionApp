@@ -153,9 +153,8 @@ export function SpotifyAuthProvider({ children }) {
       signIn,
       signOut,
       redirectUri,
-      // Signed in and actually able to read the catalog. The two come apart
-      // when the account isn't on the app's Development Mode allowlist.
-      isAuthorized: Boolean(session?.accessToken) && !accessDenied,
+      // Signed in and refused are independent: the account can hold a perfectly
+      // valid token and still not be on the app's Development Mode allowlist.
       accessDenied,
       canSignIn: Boolean(clientId) && Boolean(request),
       isConfigured: Boolean(clientId),
