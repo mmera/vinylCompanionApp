@@ -12,21 +12,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AlbumRow } from '../components/AlbumRow';
 import { AlbumTile } from '../components/AlbumTile';
 import { EmptyState } from '../components/EmptyState';
+import { useCollectionPreferences } from '../hooks/useCollectionPreferences';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { useCollection } from '../context/CollectionContext';
 import { SORT_MODES, buildSections } from '../utils/collectionView';
 import { colors, radius, spacing, type } from '../theme';
 
-const COLUMNS = 2;
-
-/**
- * Below this many records you can see everything by scrolling, and a search
- * box plus four sort buttons is just furniture. Above it, finding a specific
- * record by scrolling stops being realistic.
- */
-const CONTROLS_THRESHOLD = 12;
+const GRID_COLUMNS = 2;
 
 /** The shelf: every record you own. */
 export function CollectionScreen({ navigation }) {
@@ -36,19 +31,31 @@ export function CollectionScreen({ navigation }) {
   const { stop: stopPreview } = usePreviewPlayer();
 
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState('added');
+  const { view, sort, setView, setSort } = useCollectionPreferences();
+
+  const isGrid = view === 'grid';
+  const columns = isGrid ? GRID_COLUMNS : 1;
 
   const tileWidth = useMemo(
-    () => (width - spacing.lg * 2 - spacing.md * (COLUMNS - 1)) / COLUMNS,
+    () => (width - spacing.lg * 2 - spacing.md * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
     [width],
   );
 
   const { sections, total } = useMemo(
-    () => buildSections(records, { sort, query, columns: COLUMNS }),
-    [records, sort, query],
+    () => buildSections(records, { sort, query, columns }),
+    [records, sort, query, columns],
   );
 
-  const showControls = records.length >= CONTROLS_THRESHOLD;
+  /*
+   * Shown as soon as there is anything to organise.
+   *
+   * These used to appear only past twelve records, on the theory that a search
+   * box over three of them is furniture. The effect was that nobody knew the
+   * feature existed — including while testing it — because a small collection
+   * looks exactly like the version without it. A control you cannot find is
+   * worth less than one you occasionally don't need.
+   */
+  const showControls = records.length > 0;
   const isFiltered = query.trim().length > 0;
 
   const openDetail = useCallback(
@@ -59,24 +66,30 @@ export function CollectionScreen({ navigation }) {
     [navigation, stopPreview],
   );
 
-  // One item is one row of the grid — SectionList has no numColumns, so the
-  // columns are built here rather than by the list.
+  // One item is one row — SectionList has no numColumns, so the columns are
+  // built here rather than by the list. In list view a row holds one record.
   const renderItem = useCallback(
-    ({ item: row }) => (
-      <View style={styles.row}>
-        {row.map((album) => (
-          <AlbumTile
-            key={album.id}
-            album={album}
-            width={tileWidth}
-            onPress={() => openDetail(album)}
-          />
-        ))}
-        {/* Keeps a trailing odd record left-aligned instead of stretched. */}
-        {row.length < COLUMNS ? <View style={{ width: tileWidth }} /> : null}
-      </View>
-    ),
-    [tileWidth, openDetail],
+    ({ item: row }) => {
+      if (!isGrid) {
+        return <AlbumRow album={row[0]} onPress={() => openDetail(row[0])} />;
+      }
+
+      return (
+        <View style={styles.row}>
+          {row.map((album) => (
+            <AlbumTile
+              key={album.id}
+              album={album}
+              width={tileWidth}
+              onPress={() => openDetail(album)}
+            />
+          ))}
+          {/* Keeps a trailing odd record left-aligned instead of stretched. */}
+          {row.length < GRID_COLUMNS ? <View style={{ width: tileWidth }} /> : null}
+        </View>
+      );
+    },
+    [isGrid, tileWidth, openDetail],
   );
 
   const renderSectionHeader = useCallback(
@@ -139,31 +152,65 @@ export function CollectionScreen({ navigation }) {
 
         {showControls ? (
           <View style={styles.controls}>
-            <View style={styles.searchBar}>
-              <Text style={styles.searchMark}>⌕</Text>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search your collection"
-                placeholderTextColor={colors.textTertiary}
-                style={styles.input}
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-                accessibilityLabel="Search your collection"
-              />
-              {/* iOS draws its own clear button; everywhere else needs one. */}
-              {isFiltered && Platform.OS !== 'ios' ? (
-                <Pressable
-                  onPress={() => setQuery('')}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear search"
-                >
-                  <Text style={styles.clearMark}>✕</Text>
-                </Pressable>
-              ) : null}
+            {/*
+              Search and the view toggle share a row: four sort pills plus a
+              toggle overflows a narrow phone, and search is the control that
+              wants the width.
+            */}
+            <View style={styles.searchRow}>
+              <View style={styles.searchBar}>
+                <Text style={styles.searchMark}>⌕</Text>
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search your collection"
+                  placeholderTextColor={colors.textTertiary}
+                  style={styles.input}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  clearButtonMode="while-editing"
+                  accessibilityLabel="Search your collection"
+                />
+                {/* iOS draws its own clear button; everywhere else needs one. */}
+                {isFiltered && Platform.OS !== 'ios' ? (
+                  <Pressable
+                    onPress={() => setQuery('')}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                  >
+                    <Text style={styles.clearMark}>✕</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <View style={styles.viewToggle}>
+                {[
+                  { id: 'grid', mark: '▦', label: 'Grid view' },
+                  { id: 'list', mark: '▤', label: 'List view' },
+                ].map((mode) => {
+                  const active = view === mode.id;
+                  return (
+                    <Pressable
+                      key={mode.id}
+                      onPress={() => setView(mode.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={mode.label}
+                      style={({ pressed }) => [
+                        styles.viewButton,
+                        active && styles.viewButtonActive,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={[styles.viewMark, active && styles.viewMarkActive]}>
+                        {mode.mark}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
             <View style={styles.sortRow}>
@@ -291,7 +338,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -300,6 +353,30 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  viewButton: {
+    width: 40,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewButtonActive: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  viewMark: {
+    fontSize: 16,
+    color: colors.textTertiary,
+  },
+  viewMarkActive: {
+    color: colors.text,
   },
   searchMark: {
     fontSize: 16,

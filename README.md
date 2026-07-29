@@ -9,8 +9,8 @@ Personal use only — no accounts, no backend, no analytics. Everything lives on
 - **Scanner** — a live camera view that analyses what it sees every ~1.8s and identifies
   the album cover. No shutter button.
 - **Collection** — records you own, stored locally, with cover art and full tracklists.
-  Searchable and sortable by artist, album, or era once there's enough on the shelf to
-  need it. Records Spotify has never heard of can be added by hand.
+  Grid or list, searchable, and sortable by artist, album, or era. Records Spotify has
+  never heard of can be added by hand.
 
 ---
 
@@ -39,17 +39,16 @@ catalog data; signing in exists to obtain a token, not to reach into anyone's ac
 3. Copy the **Client ID** into a repository *variable* named `SPOTIFY_CLIENT_ID`
    (Settings → Secrets and variables → Actions → **Variables**, not Secrets — it isn't
    one), and into `EXPO_PUBLIC_SPOTIFY_CLIENT_ID` in your local `.env`.
-4. **Re-run the deploy.** `EXPO_PUBLIC_*` values are inlined into the bundle *during the
+4. **Add yourself under User Management.** In the dashboard: your app → **User Management**
+   → add the name and email of the Spotify account you'll sign in with.
+5. **Re-run the deploy.** `EXPO_PUBLIC_*` values are inlined into the bundle *during the
    build*, so a deploy that ran before you set the variable has no client ID in it and
    setting the variable afterwards changes nothing until the next build. The build log
    says which it was: `Spotify sign-in enabled (client ID …abcd)`, or a warning.
 
-If a build does go out without one, it isn't a dead end: Settings offers a field to paste
-the client ID, saved on that device. Handy for anyone forking this without CI, and the
-reason a forgotten variable is an annoyance rather than a broken app.
-
-4. **Add yourself under User Management.** In the dashboard: your app → **User Management**
-   → add the name and email of the Spotify account you'll sign in with.
+If a build does go out without a client ID, it isn't a dead end: Settings offers a field to
+paste one, saved on that device. Handy for anyone forking this without CI, and the reason a
+forgotten variable is an annoyance rather than a broken app.
 
 > **Step 4 is not optional, and skipping it looks like a bug.** A new app is in
 > Development Mode, where *only* accounts on that list may call the API. Any other account
@@ -259,7 +258,8 @@ your app.
 | Tab switch | Leave Scanner mid-scan; scanning stops and resumes on return |
 | Preview | Only shown when a track has a clip — on a post-2024 Spotify app, expect no preview controls at all |
 | Silent switch | Flip the ringer to silent — previews still audible (pre-cutoff apps only) |
-| Search the shelf | Past 12 records: search and sort appear; `fleet rum` finds *Rumours* |
+| Search the shelf | Search, sort and the grid/list toggle appear as soon as there's a record; `fleet rum` finds *Rumours* |
+| Grid / list toggle | Switches density; the choice survives a reload |
 | Sort by artist | Sticky A–Z headers; **The** Beatles under B, not T |
 | Add by hand | Search something Spotify lacks → "Add by hand" → appears with a ✎ badge |
 | Edit a manual record | Open it, change the year, go back — the detail screen reflects the edit |
@@ -321,9 +321,20 @@ A single JSON array in device storage under `crate:collection:v1`, keyed by Spot
 ID. A provider holds it in memory so every screen reads one source of truth. Re-adding an
 album you already own is a no-op, not an error.
 
-**Finding things in it.** Past a dozen records the grid grows a search box and four sort
-modes; below that they'd be furniture, so they stay hidden. Sorting by Artist or Album
-groups the grid under sticky A–Z headers, by Year under decades. The ordering rules live in
+**Finding things in it.** As soon as there's a record, the collection carries a search box,
+a grid/list toggle, and four sort modes. Sorting by Artist or Album groups under sticky A–Z
+headers, by Year under decades. Grid or list, and the sort, are remembered on the device.
+
+Grid trades text for pictures — two columns truncate long titles and fit about six records
+on screen. List gives each record the full width and roughly twice the density, which is
+what you want when looking for a specific record rather than browsing.
+
+(These controls originally appeared only past twelve records, on the theory that a search
+box over three of them is furniture. The result was that nobody found the feature —
+a small collection looked identical to the version without it. A control you can't find is
+worth less than one you occasionally don't need.)
+
+The ordering rules live in
 `src/utils/collectionView.js` as pure functions — worth knowing that they file records the
 way a shelf does: leading articles are ignored, so **The** Beatles sorts under B and **A**
 Tribe Called Quest under T, and accents are folded so "Björk" is reachable by typing
