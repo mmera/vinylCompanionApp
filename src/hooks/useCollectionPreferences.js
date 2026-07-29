@@ -33,6 +33,14 @@ export function useCollectionPreferences() {
 
   const setView = useCallback((view) => savePreferences({ view }), []);
   const setSort = useCallback((sort) => savePreferences({ sort }), []);
+  const setName = useCallback((name) => savePreferences({ name }), []);
 
-  return { view: preferences.view, sort: preferences.sort, setView, setSort };
+  return {
+    view: preferences.view,
+    sort: preferences.sort,
+    name: preferences.name,
+    setView,
+    setSort,
+    setName,
+  };
 }

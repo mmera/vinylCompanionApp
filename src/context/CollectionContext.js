@@ -1,10 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import {
+  OWNED,
+  WISHLIST,
   addManualRecord,
   addToCollection,
   loadCollection,
   removeFromCollection,
+  setRecordStatus,
   updateManualRecord,
 } from '../storage/collection';
 
@@ -41,8 +44,8 @@ export function CollectionProvider({ children }) {
     return added;
   }, []);
 
-  const addManual = useCallback(async (fields) => {
-    const { records: next, record } = await addManualRecord(fields);
+  const addManual = useCallback(async (fields, options) => {
+    const { records: next, record } = await addManualRecord(fields, options);
     setRecords(next);
     return record;
   }, []);
@@ -57,22 +60,58 @@ export function CollectionProvider({ children }) {
     setRecords(await removeFromCollection(albumId));
   }, []);
 
-  const ownedIds = useMemo(() => new Set(records.map((record) => record.id)), [records]);
+  const setStatus = useCallback(async (recordId, status) => {
+    setRecords(await setRecordStatus(recordId, status));
+  }, []);
+
+  /*
+   * Two sets, not one.
+   *
+   * `owns()` gates every "Add to Collection" button in the app. If wishlisted
+   * records counted as owned, each of those buttons would read "In your
+   * collection" for a record you have explicitly not bought — the one thing
+   * the wishlist exists to distinguish.
+   */
+  const { ownedIds, wishlistIds } = useMemo(() => {
+    const owned = new Set();
+    const wishlist = new Set();
+    for (const record of records) {
+      (record.status === WISHLIST ? wishlist : owned).add(record.id);
+    }
+    return { ownedIds: owned, wishlistIds: wishlist };
+  }, [records]);
 
   const value = useMemo(
     () => ({
       records,
       ownedIds,
+      wishlistIds,
       isLoading,
       error,
       add,
       addManual,
       updateManual,
+      setStatus,
       remove,
       refresh,
       owns: (albumId) => ownedIds.has(albumId),
+      isWishlisted: (albumId) => wishlistIds.has(albumId),
+      statusOf: (albumId) =>
+        ownedIds.has(albumId) ? OWNED : wishlistIds.has(albumId) ? WISHLIST : null,
     }),
-    [records, ownedIds, isLoading, error, add, addManual, updateManual, remove, refresh],
+    [
+      records,
+      ownedIds,
+      wishlistIds,
+      isLoading,
+      error,
+      add,
+      addManual,
+      updateManual,
+      setStatus,
+      remove,
+      refresh,
+    ],
   );
 
   return <CollectionContext.Provider value={value}>{children}</CollectionContext.Provider>;

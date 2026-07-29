@@ -14,7 +14,10 @@ const STORAGE_KEY = 'crate:collection-view:v1';
 
 const VIEW_MODES = ['grid', 'list'];
 
-const DEFAULTS = { view: 'grid', sort: 'added' };
+const DEFAULTS = { view: 'grid', sort: 'added', name: '' };
+
+// Long enough for "Marco's Records"; short enough to stay one line as a title.
+const MAX_NAME = 40;
 
 let cache = { ...DEFAULTS };
 let hydrated = false;
@@ -24,12 +27,20 @@ function notify() {
   for (const listener of listeners) listener(cache);
 }
 
-/** Ignore anything unrecognised — a stale or hand-edited value must not
- *  produce a collection screen that renders nothing. */
+/**
+ * Ignore anything unrecognised — a stale or hand-edited value must not produce
+ * a collection screen that renders nothing.
+ *
+ * Note this *whitelists*: it builds a fresh object, and runs on every write, so
+ * a key that isn't listed here is silently dropped rather than passed through.
+ */
 function sanitize(saved) {
   return {
     view: VIEW_MODES.includes(saved?.view) ? saved.view : DEFAULTS.view,
     sort: SORT_MODES.some((mode) => mode.id === saved?.sort) ? saved.sort : DEFAULTS.sort,
+    // Free text, so it gets length and type validation rather than an enum
+    // check. Empty is valid and means "no name yet".
+    name: typeof saved?.name === 'string' ? saved.name.trim().slice(0, MAX_NAME) : DEFAULTS.name,
   };
 }
 

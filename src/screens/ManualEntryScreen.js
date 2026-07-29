@@ -1,11 +1,20 @@
 import { useCallback, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { useCollection } from '../context/CollectionContext';
-import { colors, spacing, type } from '../theme';
+import { OWNED, WISHLIST } from '../storage/collection';
+import { colors, radius, spacing, type } from '../theme';
 
 /**
  * Adding a record Spotify has never heard of.
@@ -31,6 +40,9 @@ export function ManualEntryScreen({ navigation, route }) {
     year: existing?.year ?? route.params?.year ?? '',
     notes: existing?.notes ?? '',
   });
+  // Editing keeps whatever list the record is already on; only a new record
+  // asks, and defaults to owned because that is the common case.
+  const [status, setStatus] = useState(existing?.status ?? route.params?.status ?? OWNED);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -45,14 +57,18 @@ export function ManualEntryScreen({ navigation, route }) {
     setIsSaving(true);
     setError(null);
     try {
-      if (isEditing) await collection.updateManual(existing.id, form);
-      else await collection.addManual(form);
+      if (isEditing) {
+        await collection.updateManual(existing.id, form);
+        if (status !== existing.status) await collection.setStatus(existing.id, status);
+      } else {
+        await collection.addManual(form, { status });
+      }
       navigation.goBack();
     } catch (saveError) {
       setError(saveError.message ?? 'Could not save this record.');
       setIsSaving(false);
     }
-  }, [collection, existing, form, isEditing, navigation]);
+  }, [collection, existing, form, isEditing, navigation, status]);
 
   return (
     <SafeAreaView style={styles.fill} edges={['bottom']}>
@@ -100,10 +116,49 @@ export function ManualEntryScreen({ navigation, route }) {
             help="Optional — pressing, condition, where you found it."
           />
 
+          <View style={styles.statusField}>
+            <Text style={styles.statusLabel}>Where does it go?</Text>
+            <View style={styles.statusChoices}>
+              {[
+                { id: OWNED, label: 'I own it' },
+                { id: WISHLIST, label: 'Wishlist' },
+              ].map((choice) => {
+                const active = choice.id === status;
+                return (
+                  <Pressable
+                    key={choice.id}
+                    onPress={() => setStatus(choice.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={({ pressed }) => [
+                      styles.statusChoice,
+                      active && styles.statusChoiceActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text
+                      style={[styles.statusChoiceLabel, active && styles.statusChoiceLabelActive]}
+                    >
+                      {choice.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Button
-            label={isSaving ? 'Saving…' : isEditing ? 'Save changes' : 'Add to collection'}
+            label={
+              isSaving
+                ? 'Saving…'
+                : isEditing
+                  ? 'Save changes'
+                  : status === WISHLIST
+                    ? 'Add to wishlist'
+                    : 'Add to collection'
+            }
             variant="primary"
             onPress={handleSave}
             disabled={!complete}
@@ -133,5 +188,38 @@ const styles = StyleSheet.create({
     ...type.caption,
     color: colors.danger,
     lineHeight: 18,
+  },
+  statusField: {
+    gap: spacing.sm,
+  },
+  statusLabel: {
+    ...type.label,
+  },
+  statusChoices: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  statusChoice: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  statusChoiceActive: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  statusChoiceLabel: {
+    ...type.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  statusChoiceLabelActive: {
+    color: colors.background,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

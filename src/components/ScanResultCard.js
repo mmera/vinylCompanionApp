@@ -3,8 +3,10 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-nativ
 
 import { AlbumActions } from './AlbumActions';
 import { AlbumArt } from './AlbumArt';
+import { Button } from './Button';
 import { useCollection } from '../context/CollectionContext';
 import { getAlbumTracks } from '../services/spotify';
+import { OWNED, WISHLIST } from '../storage/collection';
 import { colors, radius, spacing, type } from '../theme';
 
 /**
@@ -14,12 +16,13 @@ import { colors, radius, spacing, type } from '../theme';
  * fetched lazily just to find a playable preview clip — the full list lives
  * on the detail screen.
  */
-export function ScanResultCard({ result, onDismiss, onOpenDetail }) {
+export function ScanResultCard({ result, onDismiss, onOpenDetail, onAddManually }) {
   const { album, identification } = result;
   const collection = useCollection();
 
   const [previewTrack, setPreviewTrack] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [isWishlisting, setIsWishlisting] = useState(false);
   const [addError, setAddError] = useState(null);
 
   const slide = useRef(new Animated.Value(0)).current;
@@ -56,19 +59,26 @@ export function ScanResultCard({ result, onDismiss, onOpenDetail }) {
   }, [album?.id]);
 
   const isOwned = album ? collection.owns(album.id) : false;
+  const isWishlisted = album ? collection.isWishlisted(album.id) : false;
 
-  const handleAdd = useCallback(async () => {
-    if (!album) return;
-    setIsAdding(true);
-    setAddError(null);
-    try {
-      await collection.add(album, { source: 'scan' });
-    } catch (error) {
-      setAddError(error.message ?? 'Could not save this record.');
-    } finally {
-      setIsAdding(false);
-    }
-  }, [album, collection]);
+  const save = useCallback(
+    async (status, setBusy) => {
+      if (!album) return;
+      setBusy(true);
+      setAddError(null);
+      try {
+        await collection.add(album, { source: 'scan', status });
+      } catch (error) {
+        setAddError(error.message ?? 'Could not save this record.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [album, collection],
+  );
+
+  const handleAdd = useCallback(() => save(OWNED, setIsAdding), [save]);
+  const handleWishlist = useCallback(() => save(WISHLIST, setIsWishlisting), [save]);
 
   const translateY = useMemo(
     () => slide.interpolate({ inputRange: [0, 1], outputRange: [340, 0] }),
@@ -112,6 +122,9 @@ export function ScanResultCard({ result, onDismiss, onOpenDetail }) {
             onAdd={handleAdd}
             isOwned={isOwned}
             isAdding={isAdding}
+            onWishlist={handleWishlist}
+            isWishlisted={isWishlisted}
+            isWishlisting={isWishlisting}
           />
           {addError ? <Text style={styles.error}>{addError}</Text> : null}
 
@@ -124,11 +137,29 @@ export function ScanResultCard({ result, onDismiss, onOpenDetail }) {
           </Pressable>
         </>
       ) : (
+        /*
+         * Claude knows what this is; Spotify just doesn't stock it. That used
+         * to be the end of the road — the card explained the gap and offered
+         * nothing, discarding an identification good enough to save. Manual
+         * records exist precisely for this, so hand the answer straight over.
+         */
         <View style={styles.notOnSpotify}>
           <Text style={styles.notOnSpotifyText}>
             Recognized the cover, but this release isn&rsquo;t on Spotify — so there&rsquo;s no
-            artwork, preview, or tracklist to pull in.
+            artwork, preview, or tracklist to pull in. You can still keep it by hand.
           </Text>
+          <Button
+            label="Add by hand"
+            variant="primary"
+            onPress={() =>
+              onAddManually({
+                artist: identification.artist,
+                name: identification.album,
+                year: identification.year,
+              })
+            }
+            style={styles.manualAction}
+          />
         </View>
       )}
 
@@ -198,6 +229,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
     borderRadius: radius.md,
     padding: spacing.md,
+    gap: spacing.md,
+  },
+  manualAction: {
+    marginTop: spacing.xs,
   },
   notOnSpotifyText: {
     ...type.body,

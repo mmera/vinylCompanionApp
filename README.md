@@ -9,8 +9,10 @@ Personal use only — no accounts, no backend, no analytics. Everything lives on
 - **Scanner** — a live camera view that analyses what it sees every ~1.8s and identifies
   the album cover. No shutter button.
 - **Collection** — records you own, stored locally, with cover art and full tracklists.
-  Grid or list, searchable, and sortable by artist, album, or era. Records Spotify has
-  never heard of can be added by hand.
+  Grid or list, searchable, and sortable by artist, album, or era. Name it what you like.
+  Records Spotify has never heard of can be added by hand.
+- **Wishlist** — records you want, in the same shelf under a different heading, so
+  searching and sorting work on it identically. Buying one is a single tap.
 
 ---
 
@@ -260,6 +262,13 @@ your app.
 | Silent switch | Flip the ringer to silent — previews still audible (pre-cutoff apps only) |
 | Search the shelf | Search, sort and the grid/list toggle appear as soon as there's a record; `fleet rum` finds *Rumours* |
 | Grid / list toggle | Switches density; the choice survives a reload |
+| Wishlist | Add from scan, search and by hand; a wishlisted record never reads "In your collection" |
+| Buying a record | "Got it — add to collection" moves it across; it does not duplicate |
+| Old records | Anything saved before the wishlist existed still shows, as owned |
+| Scan → add | The ◎ in the search bar dismisses the modal and opens the Scanner in one step |
+| Sleeve Spotify lacks | Scan result offers "Add by hand", prefilled with what Claude read |
+| Track tap | Opens that track in Spotify — not the album |
+| Collection name | Set it in Settings; the shelf title updates and survives a reload |
 | Sort by artist | Sticky A–Z headers; **The** Beatles under B, not T |
 | Add by hand | Search something Spotify lacks → "Add by hand" → appears with a ✎ badge |
 | Edit a manual record | Open it, change the year, go back — the detail screen reflects the edit |
@@ -344,6 +353,25 @@ The grid is a `SectionList` whose items are *rows* of records rather than record
 `SectionList` has no `numColumns`, and building the columns by hand is what keeps both
 sticky headers and virtualisation.
 
+### Owned and wanted
+
+A wishlist is the same records under a different heading, so it is one field —
+`status: 'owned' | 'wishlist'` — rather than a second store. Search, sort, grid/list and
+the A–Z sections then work on it without knowing it exists, and buying a record is a field
+change rather than a delete-and-re-add.
+
+Two details are load-bearing:
+
+- **Status is defaulted when the collection is read**, not by rewriting storage. Every
+  record saved before the wishlist existed reads as owned — which it is — with no
+  migration to run, fail, or repeat.
+- **`owns()` counts only owned records.** It gates every "Add to Collection" button in the
+  app; if wishlisted records counted, each of those buttons would claim you own something
+  you have explicitly not bought. `isWishlisted()` is separate for the same reason.
+
+`status` is kept apart from `source` (`scan` | `search` | `manual`), which answers a
+different question — where a record came from, not whether you have it.
+
 ### Records Spotify doesn't have
 
 Private pressings, bootlegs, most 7"s, and anything long out of print simply aren't in the
@@ -360,6 +388,11 @@ records that can be edited after the fact.
 
 One app-wide `expo-audio` player is reused for every track, so starting a preview anywhere
 implicitly stops whatever was playing before.
+
+Tapping a track row opens **that track** in Spotify rather than the album — each
+normalized track already carries its own `spotify:track:<id>` URI. Where a preview clip
+exists the number column becomes the play control, so the two coexist. This matters more
+than it sounds: without it, a tracklist on a modern Spotify app is entirely inert.
 
 > **Spotify stopped returning `preview_url` for apps created after 27 November 2024.** If
 > your app is new — and it almost certainly is — every track returns `null` and there are

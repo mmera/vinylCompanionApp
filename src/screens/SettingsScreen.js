@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { useCollectionPreferences } from '../hooks/useCollectionPreferences';
 import { useCredentials } from '../context/CredentialsContext';
 import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { verifyClaudeCredentials } from '../services/claude';
@@ -31,6 +32,7 @@ import { colors, radius, spacing, surfaces, type } from '../theme';
 export function SettingsScreen({ navigation, route }) {
   const { credentials, save, clear, hasClaude, persistence, origin } = useCredentials();
   const spotify = useSpotifyAuth();
+  const { name, setName } = useCollectionPreferences();
   const isOnboarding = route?.params?.onboarding ?? false;
 
   const [form, setForm] = useState({ claudeApiKey: '', claudeModel: '' });
@@ -146,6 +148,16 @@ export function SettingsScreen({ navigation, route }) {
               is a paid API — that key is yours and stays on this device.
             </Text>
           </View>
+
+          {/* Saved as you type: it is a display preference with nothing to
+              verify, so a Save button would be ceremony. */}
+          <Field
+            label="Collection name"
+            value={name}
+            onChangeText={setName}
+            placeholder="Collection"
+            help="Optional — shown at the top of your shelf."
+          />
 
           <SpotifySection
             spotify={spotify}

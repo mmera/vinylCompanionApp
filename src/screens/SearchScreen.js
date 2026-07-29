@@ -15,6 +15,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useSpotifyAuth } from '../context/SpotifyAuthContext';
 import { searchAlbums } from '../services/spotify';
 import { useCollection } from '../context/CollectionContext';
+import { OWNED, WISHLIST } from '../storage/collection';
 import { colors, radius, spacing, type } from '../theme';
 
 const DEBOUNCE_MS = 350;
@@ -30,6 +31,21 @@ export function SearchScreen({ navigation }) {
 
   const collection = useCollection();
   const spotify = useSpotifyAuth();
+
+  /*
+   * Scanning is the fastest way to add a record and the reason the app exists,
+   * but it lived only behind its own tab — so "Add a record" offered every
+   * route except the good one.
+   *
+   * The tab routes are nested inside the stack route `Tabs`, so a bare
+   * navigate('Scanner') bubbles to the root stack, finds nothing and no-ops.
+   * Targeting the parent dismisses this modal and selects the tab in one
+   * dispatch; goBack() followed by navigate() races the dismissal animation.
+   */
+  const scanInstead = useCallback(
+    () => navigation.navigate('Tabs', { screen: 'Scanner' }),
+    [navigation],
+  );
   // Guards against a slow early request overwriting a newer one's results.
   const requestIdRef = useRef(0);
 
@@ -69,11 +85,11 @@ export function SearchScreen({ navigation }) {
   }, [query]);
 
   const handleAdd = useCallback(
-    async (album) => {
-      setAddingId(album.id);
+    async (album, status) => {
+      setAddingId(`${album.id}:${status}`);
       setError(null);
       try {
-        await collection.add(album, { source: 'search' });
+        await collection.add(album, { source: 'search', status });
       } catch (addError) {
         setError(addError.message ?? 'Could not save this record.');
       } finally {
@@ -86,6 +102,7 @@ export function SearchScreen({ navigation }) {
   const renderItem = useCallback(
     ({ item }) => {
       const isOwned = collection.owns(item.id);
+      const isWishlisted = collection.isWishlisted(item.id);
       return (
         <View style={styles.row}>
           <Pressable
@@ -106,15 +123,44 @@ export function SearchScreen({ navigation }) {
             </View>
           </Pressable>
 
+          {/* Wishlist first, collection second — the rightmost button is the
+              one under the thumb, and owning is the more common outcome. */}
           <Pressable
-            onPress={() => handleAdd(item)}
-            disabled={isOwned || addingId === item.id}
+            onPress={() => handleAdd(item, WISHLIST)}
+            disabled={isOwned || isWishlisted || addingId !== null}
             accessibilityRole="button"
-            accessibilityLabel={isOwned ? 'Already in your collection' : `Add ${item.name}`}
-            hitSlop={10}
+            accessibilityLabel={
+              isWishlisted ? 'Already on your wishlist' : `Add ${item.name} to wishlist`
+            }
+            hitSlop={6}
             style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
           >
-            {addingId === item.id ? (
+            {addingId === `${item.id}:${WISHLIST}` ? (
+              <ActivityIndicator size="small" color={colors.text} />
+            ) : (
+              <Text
+                style={[styles.addMark, (isOwned || isWishlisted) && styles.addMarkOwned]}
+              >
+                {isWishlisted ? '♥' : '♡'}
+              </Text>
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleAdd(item, OWNED)}
+            disabled={isOwned || addingId !== null}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isOwned
+                ? 'Already in your collection'
+                : isWishlisted
+                  ? `Move ${item.name} to your collection`
+                  : `Add ${item.name}`
+            }
+            hitSlop={6}
+            style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+          >
+            {addingId === `${item.id}:${OWNED}` ? (
               <ActivityIndicator size="small" color={colors.text} />
             ) : (
               <Text style={[styles.addMark, isOwned && styles.addMarkOwned]}>
@@ -164,6 +210,15 @@ export function SearchScreen({ navigation }) {
           accessibilityLabel="Search Spotify for an album"
         />
         {isSearching ? <ActivityIndicator size="small" color={colors.textTertiary} /> : null}
+        <Pressable
+          onPress={scanInstead}
+          accessibilityRole="button"
+          accessibilityLabel="Scan a cover instead"
+          hitSlop={10}
+          style={({ pressed }) => pressed && styles.pressed}
+        >
+          <Text style={styles.scanMark}>◎</Text>
+        </Pressable>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -190,6 +245,8 @@ export function SearchScreen({ navigation }) {
               message="Search Spotify's catalog and tap + to add it straight to your collection."
               actionLabel="Add a record by hand"
               onAction={() => navigation.replace('ManualEntry')}
+              secondaryActionLabel="Scan a cover"
+              onSecondaryAction={scanInstead}
             />
           )
         }
@@ -237,6 +294,10 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
   },
+  scanMark: {
+    fontSize: 20,
+    color: colors.textSecondary,
+  },
   list: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -276,7 +337,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   addButton: {
-    width: 44,
+    width: 40,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',

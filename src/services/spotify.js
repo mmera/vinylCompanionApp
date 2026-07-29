@@ -225,7 +225,12 @@ function normalizeTrack(track) {
     previewUrl: track.preview_url ?? null,
     artist: track.artists?.map((a) => a.name).join(', ') || '',
     spotifyUri: track.uri ?? (track.id ? `spotify:track:${track.id}` : null),
-    spotifyUrl: track.external_urls?.spotify ?? null,
+    // Synthesized like `normalizeAlbum` does. Without it, a track whose
+    // `external_urls` Spotify happened to omit has a deep link but no web
+    // fallback, which reads as a link that silently does nothing.
+    spotifyUrl:
+      track.external_urls?.spotify ??
+      (track.id ? `https://open.spotify.com/track/${track.id}` : null),
   };
 }
 

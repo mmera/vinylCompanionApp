@@ -30,7 +30,27 @@ export class StorageError extends Error {
  * @property {string} [notes]           Manual records only.
  * @property {number} addedAt           Epoch ms.
  * @property {'scan'|'search'|'manual'} source
+ * @property {'owned'|'wishlist'} status
  */
+
+/**
+ * Owned and wanted are the same kind of thing recorded twice over, so they
+ * share a store and differ by one field. That keeps searching, sorting and
+ * grouping working on the wishlist for free, and makes buying a record a field
+ * change rather than a move between stores.
+ *
+ * Kept separate from `source`, which is provenance ('scan' | 'search' |
+ * 'manual') and answers a different question. Overloading it would repeat the
+ * two-sources-of-truth mistake that `isManualId` exists to avoid.
+ */
+export const OWNED = 'owned';
+export const WISHLIST = 'wishlist';
+
+const STATUSES = [OWNED, WISHLIST];
+
+export function isStatus(value) {
+  return STATUSES.includes(value);
+}
 
 /**
  * Records that exist only on the shelf, not in Spotify's catalog — private
@@ -85,8 +105,19 @@ export async function loadCollection() {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Newest first, so a freshly scanned record lands at the top of the grid.
-    return parsed.filter((record) => record?.id).sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
+    return (
+      parsed
+        .filter((record) => record?.id)
+        /*
+         * Status is defaulted here rather than by rewriting the store, so
+         * every record saved before the wishlist existed reads as owned — which
+         * it is — with no migration step to run, fail, or repeat. An
+         * unrecognised value falls back the same way.
+         */
+        .map((record) => (isStatus(record.status) ? record : { ...record, status: OWNED }))
+        // Newest first, so a freshly scanned record lands at the top of the grid.
+        .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0))
+    );
   } catch {
     // Corrupt payload: better to start clean than to hard-fail every launch.
     return [];
@@ -102,17 +133,29 @@ async function persist(records) {
 }
 
 /**
- * Add an album. Re-adding an existing album is a no-op rather than an error —
+ * Add an album. Re-adding one you already have is a no-op rather than an error —
  * it's the natural outcome of pointing the scanner at a record you already own.
  *
- * @returns {Promise<{records: CollectionRecord[], added: boolean}>}
+ * The exception is a record already saved under the *other* status: adding a
+ * wishlisted record to the collection is how buying it gets recorded, so that
+ * promotes it in place rather than reporting "already saved" and doing nothing.
+ *
+ * @returns {Promise<{records: CollectionRecord[], added: boolean, moved: boolean}>}
  */
-export async function addToCollection(album, { source = 'scan' } = {}) {
+export async function addToCollection(album, { source = 'scan', status = OWNED } = {}) {
   if (!album?.id) throw new StorageError('That album is missing an ID and cannot be saved.');
 
   const records = await loadCollection();
-  if (records.some((record) => record.id === album.id)) {
-    return { records, added: false };
+  const existing = records.find((record) => record.id === album.id);
+
+  if (existing) {
+    if (existing.status === status) return { records, added: false, moved: false };
+
+    const next = records.map((record) =>
+      record.id === album.id ? { ...record, status } : record,
+    );
+    await persist(next);
+    return { records: next, added: false, moved: true };
   }
 
   const record = {
@@ -126,11 +169,34 @@ export async function addToCollection(album, { source = 'scan' } = {}) {
     spotifyUrl: album.spotifyUrl ?? `https://open.spotify.com/album/${album.id}`,
     addedAt: Date.now(),
     source,
+    status,
   };
 
   const next = [record, ...records];
   await persist(next);
-  return { records: next, added: true };
+  return { records: next, added: true, moved: false };
+}
+
+/**
+ * Move a record between owned and wishlist.
+ *
+ * Deliberately separate from `updateManualRecord`, which throws for catalog
+ * IDs — status is the one field that belongs to every record regardless of
+ * where it came from.
+ */
+export async function setRecordStatus(recordId, status) {
+  if (!isStatus(status)) throw new StorageError(`Unknown status "${status}".`);
+
+  const records = await loadCollection();
+  if (!records.some((record) => record.id === recordId)) {
+    throw new StorageError('That record is no longer in your collection.');
+  }
+
+  const next = records.map((record) =>
+    record.id === recordId ? { ...record, status } : record,
+  );
+  await persist(next);
+  return next;
 }
 
 /**
@@ -140,7 +206,7 @@ export async function addToCollection(album, { source = 'scan' } = {}) {
  *
  * @returns {Promise<{records: CollectionRecord[], record: CollectionRecord}>}
  */
-export async function addManualRecord(fields = {}) {
+export async function addManualRecord(fields = {}, { status = OWNED } = {}) {
   const record = {
     id: manualId(),
     ...normalizeManualFields(fields),
@@ -153,6 +219,7 @@ export async function addManualRecord(fields = {}) {
     spotifyUrl: null,
     addedAt: Date.now(),
     source: 'manual',
+    status: isStatus(status) ? status : OWNED,
   };
 
   const next = [record, ...(await loadCollection())];

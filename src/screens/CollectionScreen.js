@@ -18,10 +18,22 @@ import { EmptyState } from '../components/EmptyState';
 import { useCollectionPreferences } from '../hooks/useCollectionPreferences';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { useCollection } from '../context/CollectionContext';
+import { OWNED, WISHLIST } from '../storage/collection';
 import { SORT_MODES, buildSections } from '../utils/collectionView';
 import { colors, radius, spacing, type } from '../theme';
 
 const GRID_COLUMNS = 2;
+
+/**
+ * Owned and wanted are one store filtered two ways, so the search box, sort
+ * modes, grid/list toggle and A–Z sections all work on the wishlist without
+ * knowing it exists. Not persisted: the shelf is what you have, so that is
+ * where each launch should start.
+ */
+const SEGMENTS = [
+  { id: OWNED, label: 'Collection' },
+  { id: WISHLIST, label: 'Wishlist' },
+];
 
 /** The shelf: every record you own. */
 export function CollectionScreen({ navigation }) {
@@ -31,10 +43,19 @@ export function CollectionScreen({ navigation }) {
   const { stop: stopPreview } = usePreviewPlayer();
 
   const [query, setQuery] = useState('');
-  const { view, sort, setView, setSort } = useCollectionPreferences();
+  const [status, setStatus] = useState(OWNED);
+  const { view, sort, name, setView, setSort } = useCollectionPreferences();
 
   const isGrid = view === 'grid';
   const columns = isGrid ? GRID_COLUMNS : 1;
+  const isWishlist = status === WISHLIST;
+
+  // Everything below counts and renders the active segment, not the whole
+  // store — otherwise the count claims records the grid isn't showing.
+  const visible = useMemo(
+    () => records.filter((record) => record.status === status),
+    [records, status],
+  );
 
   const tileWidth = useMemo(
     () => (width - spacing.lg * 2 - spacing.md * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
@@ -42,8 +63,8 @@ export function CollectionScreen({ navigation }) {
   );
 
   const { sections, total } = useMemo(
-    () => buildSections(records, { sort, query, columns }),
-    [records, sort, query, columns],
+    () => buildSections(visible, { sort, query, columns }),
+    [visible, sort, query, columns],
   );
 
   /*
@@ -55,9 +76,9 @@ export function CollectionScreen({ navigation }) {
    * looks exactly like the version without it. A control you cannot find is
    * worth less than one you occasionally don't need.
    */
-  const showControls = records.length > 0;
+  const showControls = visible.length > 0;
   const isFiltered = query.trim().length > 0;
-  const countLabel = `${records.length} ${records.length === 1 ? 'record' : 'records'}`;
+  const countLabel = `${visible.length} ${visible.length === 1 ? 'record' : 'records'}`;
 
   const openDetail = useCallback(
     (album) => {
@@ -120,7 +141,11 @@ export function CollectionScreen({ navigation }) {
       */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <Text style={styles.title}>Collection</Text>
+          {/* The wishlist is a view of the same shelf, so it keeps the name
+              and the segmented control says which half you're looking at. */}
+          <Text style={styles.title} numberOfLines={1}>
+            {name || 'Collection'}
+          </Text>
           <View style={styles.headerActions}>
             <Pressable
               onPress={() => navigation.navigate('Search')}
@@ -142,6 +167,35 @@ export function CollectionScreen({ navigation }) {
             </Pressable>
           </View>
         </View>
+
+        {/*
+          Only worth showing once there is something in the other list —
+          before that it is a control with one meaningful position.
+        */}
+        {records.length > 0 ? (
+          <View style={styles.segments}>
+            {SEGMENTS.map((segment) => {
+              const active = segment.id === status;
+              return (
+                <Pressable
+                  key={segment.id}
+                  onPress={() => setStatus(segment.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  style={({ pressed }) => [
+                    styles.segment,
+                    active && styles.segmentActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                    {segment.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         <Text style={styles.count}>
           {isFiltered ? `${total} of ${countLabel}` : countLabel}
@@ -261,6 +315,15 @@ export function CollectionScreen({ navigation }) {
               onAction={() => setQuery('')}
               style={styles.empty}
             />
+          ) : isWishlist ? (
+            <EmptyState
+              mark="♡"
+              title="Nothing on your wishlist"
+              message="Records you want but don't own yet. Add one from a scan, from search, or by hand — then move it across when you find a copy."
+              actionLabel="Find a record"
+              onAction={() => navigation.navigate('Search')}
+              style={styles.empty}
+            />
           ) : (
             <EmptyState
               mark="◉"
@@ -315,6 +378,8 @@ const styles = StyleSheet.create({
   },
   title: {
     ...type.display,
+    flexShrink: 1,
+    marginRight: spacing.sm,
   },
   headerActions: {
     flexDirection: 'row',
@@ -332,6 +397,32 @@ const styles = StyleSheet.create({
   },
   count: {
     ...type.caption,
+  },
+  segments: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  segment: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  segmentActive: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  segmentLabel: {
+    ...type.caption,
+    fontWeight: '600',
+    color: colors.textTertiary,
+  },
+  segmentLabelActive: {
+    color: colors.text,
   },
   controls: {
     gap: spacing.sm,

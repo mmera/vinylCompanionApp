@@ -104,6 +104,17 @@ export function ScannerScreen({ navigation }) {
     reset();
   }, [stopPreview, reset]);
 
+  // Claude recognised it but Spotify has no entry — carry the identification
+  // over to the manual form rather than making the user retype what we know.
+  const addManually = useCallback(
+    (prefill) => {
+      stopPreview();
+      reset();
+      navigation.navigate('ManualEntry', prefill);
+    },
+    [navigation, stopPreview, reset],
+  );
+
   // Over plain HTTP the browser refuses camera access outright. The page tries
   // to upgrade itself to HTTPS on load, so reaching here means that failed —
   // usually a custom domain whose certificate hasn't been issued yet.
@@ -300,7 +311,12 @@ export function ScannerScreen({ navigation }) {
 
       <SafeAreaView style={styles.resultAnchor} edges={['bottom']} pointerEvents="box-none">
         {showResult ? (
-          <ScanResultCard result={result} onDismiss={dismiss} onOpenDetail={openDetail} />
+          <ScanResultCard
+            result={result}
+            onDismiss={dismiss}
+            onOpenDetail={openDetail}
+            onAddManually={addManually}
+          />
         ) : null}
 
         {state === ScanState.ERROR && error ? (

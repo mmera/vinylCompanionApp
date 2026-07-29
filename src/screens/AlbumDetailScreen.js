@@ -13,10 +13,11 @@ import { AlbumActions } from '../components/AlbumActions';
 import { AlbumArt } from '../components/AlbumArt';
 import { Button } from '../components/Button';
 import { getAlbum } from '../services/spotify';
-import { isManualId, isManualRecord } from '../storage/collection';
+import { OWNED, WISHLIST, isManualId, isManualRecord } from '../storage/collection';
 import { useCollection } from '../context/CollectionContext';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { confirmDestructive } from '../utils/confirm';
+import { openInSpotify } from '../utils/openInSpotify';
 import { colors, radius, spacing, surfaces, type } from '../theme';
 
 /**
@@ -38,6 +39,7 @@ export function AlbumDetailScreen({ route, navigation }) {
   const [isLoading, setIsLoading] = useState(!isManual);
   const [error, setError] = useState(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [isWishlisting, setIsWishlisting] = useState(false);
 
   const collection = useCollection();
   // Just `stop` — the full context value changes identity on every playback
@@ -90,18 +92,30 @@ export function AlbumDetailScreen({ route, navigation }) {
   }, [album?.name, navigation]);
 
   const isOwned = album ? collection.owns(album.id) : false;
+  const isWishlisted = album ? collection.isWishlisted(album.id) : false;
 
-  const handleAdd = useCallback(async () => {
-    if (!album) return;
-    setIsAdding(true);
-    try {
-      await collection.add(album, { source: 'search' });
-    } catch (addError) {
-      setError(addError.message ?? 'Could not save this record.');
-    } finally {
-      setIsAdding(false);
-    }
-  }, [album, collection]);
+  /*
+   * A record already saved under the other status is promoted in place by
+   * `addToCollection`, so "Got it — add to collection" on a wishlisted record
+   * is the same call as adding a new one. Buying a record is one tap.
+   */
+  const save = useCallback(
+    async (status, setBusy) => {
+      if (!album) return;
+      setBusy(true);
+      try {
+        await collection.add(album, { source: 'search', status });
+      } catch (addError) {
+        setError(addError.message ?? 'Could not save this record.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [album, collection],
+  );
+
+  const handleAdd = useCallback(() => save(OWNED, setIsAdding), [save]);
+  const handleWishlist = useCallback(() => save(WISHLIST, setIsWishlisting), [save]);
 
   const handleRemove = useCallback(async () => {
     const confirmed = await confirmDestructive({
@@ -183,6 +197,9 @@ export function AlbumDetailScreen({ route, navigation }) {
         onAdd={handleAdd}
         isOwned={isOwned}
         isAdding={isAdding}
+        onWishlist={handleWishlist}
+        isWishlisted={isWishlisted}
+        isWishlisting={isWishlisting}
       />
 
       {isManual ? (
@@ -225,34 +242,75 @@ export function AlbumDetailScreen({ route, navigation }) {
       )}
 
       {isOwned ? (
-        <Pressable
-          onPress={handleRemove}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.remove, pressed && styles.pressed]}
-        >
-          <Text style={styles.removeLabel}>Remove from collection</Text>
-        </Pressable>
+        <View style={styles.ownedActions}>
+          {/* The undo for adding to the wrong list, which is otherwise a
+              delete-and-retype. */}
+          <Pressable
+            onPress={() => collection.setStatus(album.id, WISHLIST)}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.remove, pressed && styles.pressed]}
+          >
+            <Text style={styles.moveLabel}>Move to wishlist</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleRemove}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.remove, pressed && styles.pressed]}
+          >
+            <Text style={styles.removeLabel}>Remove from collection</Text>
+          </Pressable>
+        </View>
       ) : null}
     </ScrollView>
   );
 }
 
 /**
- * `previewable` is the album-wide answer, not this track's. When no track has
- * a clip the row is plain text at full contrast — nothing is broken, previews
- * simply aren't part of this album. Only in the mixed case does a track
+ * A track row does two things, and which one is on top depends on the album.
+ *
+ * Tapping the row opens that track in Spotify. That is the only interaction
+ * most people will ever get here: Spotify stopped serving `preview_url` to
+ * apps registered after 2024-11-27, so on a modern app every row was
+ * previously a plain, unpressable `View` — a tracklist you could look at and
+ * nothing more.
+ *
+ * Where clips do exist, the number column becomes the play/pause control, so
+ * preview and open-in-Spotify coexist instead of competing for the same tap.
+ * `previewable` is the album-wide answer; only in the mixed case does a track
  * without a clip get dimmed, where the dimming actually means something.
  */
 function TrackRow({ track, album, previewable }) {
   const player = usePreviewPlayer();
   const isActive = player.isActive(track.id);
   const playable = Boolean(track.previewUrl);
+  const linkable = Boolean(track.spotifyUri || track.spotifyUrl);
+
+  const numberColumn =
+    previewable && playable ? (
+      <Pressable
+        onPress={() =>
+          player.toggle({
+            id: track.id,
+            url: track.previewUrl,
+            title: `${track.name} — ${album.artist}`,
+          })
+        }
+        accessibilityRole="button"
+        accessibilityLabel={`Preview ${track.name}`}
+        hitSlop={8}
+      >
+        <Text style={[styles.trackNumber, isActive && styles.trackActive]}>
+          {isActive && player.isPlaying ? '❚❚' : '▶'}
+        </Text>
+      </Pressable>
+    ) : (
+      <Text style={[styles.trackNumber, isActive && styles.trackActive]}>{track.trackNumber}</Text>
+    );
 
   const body = (
     <>
-      <Text style={[styles.trackNumber, isActive && styles.trackActive]}>
-        {isActive && player.isPlaying ? '❚❚' : track.trackNumber}
-      </Text>
+      {numberColumn}
       <View style={styles.trackText}>
         <Text
           style={[
@@ -272,23 +330,14 @@ function TrackRow({ track, album, previewable }) {
     </>
   );
 
-  if (!previewable) return <View style={styles.track}>{body}</View>;
+  if (!linkable) return <View style={styles.track}>{body}</View>;
 
   return (
     <Pressable
-      onPress={() =>
-        player.toggle({
-          id: track.id,
-          url: track.previewUrl,
-          title: `${track.name} — ${album.artist}`,
-        })
-      }
-      disabled={!playable}
-      accessibilityRole="button"
-      accessibilityLabel={
-        playable ? `Preview ${track.name}` : `${track.name}, no preview available`
-      }
-      style={({ pressed }) => [styles.track, pressed && playable && styles.pressed]}
+      onPress={() => openInSpotify(track)}
+      accessibilityRole="link"
+      accessibilityLabel={`Open ${track.name} in Spotify`}
+      style={({ pressed }) => [styles.track, pressed && styles.pressed]}
     >
       {body}
     </Pressable>
@@ -402,9 +451,17 @@ const styles = StyleSheet.create({
   trackDuration: {
     ...type.caption,
   },
+  ownedActions: {
+    gap: spacing.xs,
+  },
   remove: {
     alignItems: 'center',
     paddingVertical: spacing.md,
+  },
+  moveLabel: {
+    ...type.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   removeLabel: {
     ...type.body,
