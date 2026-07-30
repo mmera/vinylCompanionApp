@@ -142,7 +142,10 @@ export async function readBackup({ token = requireToken() } = {}) {
   try {
     const parsed = JSON.parse(content);
     if (!Array.isArray(parsed?.collection)) return null;
-    return parsed;
+    // The URL travels with the payload so Settings can offer a way in to the
+    // gist's revision history, which is the only recovery path if the current
+    // revision turns out to be the wrong one.
+    return { ...parsed, url: existing.html_url ?? null };
   } catch {
     throw new BackupError('The backup file could not be read — it may be corrupt.');
   }

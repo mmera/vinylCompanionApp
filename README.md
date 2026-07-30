@@ -89,7 +89,7 @@ github.com with no app involved.
 Add a token in Settings — github.com → Settings → Developer settings → Tokens, with the
 **`gist` scope only**, so it can touch gists and nothing else.
 
-Three rules worth knowing:
+The rules worth knowing, most of them earned:
 
 - **The backup is found by filename** (`crate-backup.json`), never by a stored gist ID. An
   ID would live in the same storage the backup exists to survive; the token alone is enough
@@ -97,11 +97,29 @@ Three rules worth knowing:
 - **Restore is automatic only into an empty collection.** If records are already on the
   device, a backup could be older than they are, so replacing them is an explicit action in
   Settings. Otherwise the safety net becomes the thing that loses data.
+- **Nothing is written until the restore check has run.** A device whose storage was cleared
+  renders an empty collection first and reads the backup a moment later. Letting the writer
+  go first overwrote the backup with nothing, in exactly the situation it existed for.
+- **An empty collection is never backed up automatically.** It nearly always means storage
+  was cleared rather than that every record was deleted on purpose, and the two are
+  indistinguishable from inside the app. Emptying it deliberately is what **Back up now** is
+  for.
+- **An empty backup will not replace a real collection.** Restore refuses and says so,
+  rather than doing as it's told and leaving nothing behind.
 - **Credentials are never backed up** — not the Claude key, not the Spotify session. A gist
   is a URL you can open in a browser. The test suite asserts this rather than trusting it.
 
 Clearing your Claude key deliberately leaves the backup token alone: switching off your
 backups shouldn't be a side effect of removing an API key.
+
+**If a backup ever goes wrong, the gist's history is the way back.** Every save adds a
+revision and none are ever removed, so the collection as it stood before any bad write is
+still there. Settings links straight to it; on GitHub the tab is **Revisions**.
+
+One iOS trap worth stating plainly: **deleting a Home Screen tile deletes that web app's
+entire storage.** A re-added tile starts empty, with no collection and no keys — including
+the GitHub token, so backup is off until you paste it back in. Re-adding a tile is a
+restore, not a reinstall.
 
 ### Keys are stored per origin
 

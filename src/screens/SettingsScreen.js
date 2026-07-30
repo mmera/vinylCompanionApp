@@ -384,12 +384,15 @@ function BackupSection({ backup, token, onChangeToken, onSaveToken }) {
   const [isWorking, setIsWorking] = useState(false);
   const [note, setNote] = useState(null);
 
+  // `done` may be a function of the result: "Restored from backup" is worth
+  // nothing on its own, since a restore that brought back an empty collection
+  // reports exactly the same thing as one that brought back the shelf.
   const run = useCallback(async (action, done) => {
     setIsWorking(true);
     setNote(null);
     try {
-      await action();
-      setNote(done);
+      const result = await action();
+      setNote(typeof done === 'function' ? done(result) : done);
     } catch (error) {
       setNote(error.message ?? 'That did not work.');
     } finally {
@@ -448,9 +451,28 @@ function BackupSection({ backup, token, onChangeToken, onSaveToken }) {
           */}
           <Button
             label="Restore from backup"
-            onPress={() => run(backup.restoreNow, 'Restored from backup.')}
+            onPress={() =>
+              run(backup.restoreNow, (restored) =>
+                restored === null
+                  ? 'No backup found for this token yet.'
+                  : `Restored ${restored.length} ${restored.length === 1 ? 'record' : 'records'}.`,
+              )
+            }
             disabled={isWorking}
           />
+          {/*
+            The way out when the current backup is the wrong one. Every save
+            adds a gist revision and none are ever removed, so the collection
+            as it stood before any bad write is always still reachable.
+          */}
+          <Text
+            style={styles.backupLink}
+            accessibilityRole="link"
+            onPress={() => Linking.openURL(backup.gistUrl ?? 'https://gist.github.com/')}
+          >
+            Open the backup on GitHub — every save keeps a revision, so an older
+            version can always be recovered.
+          </Text>
         </>
       ) : null}
 
@@ -577,6 +599,12 @@ const styles = StyleSheet.create({
   storageNoteText: {
     ...type.caption,
     lineHeight: 18,
+  },
+  backupLink: {
+    ...type.caption,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    textDecorationLine: 'underline',
   },
   clear: {
     alignItems: 'center',

@@ -124,12 +124,33 @@ export async function loadCollection() {
   }
 }
 
+const listeners = new Set();
+
+/**
+ * Watch the collection.
+ *
+ * Every writer in this module goes through `persist`, so subscribing here sees
+ * all of them — including `replaceCollection`, which a restore calls directly
+ * rather than through the context that renders the shelf. Without this, a
+ * restore updated storage while the screen kept showing the state it had at
+ * launch, and reported success over a grid that never changed.
+ *
+ * Mirrors `subscribeToPreferences` in storage/preferences.js.
+ */
+export function subscribeToCollection(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 async function persist(records) {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   } catch (error) {
     throw new StorageError('Could not save to your collection.', error);
   }
+  // Only after the write succeeded — a listener must never be told about a
+  // state that isn't on disk.
+  for (const listener of listeners) listener(records);
 }
 
 /**
@@ -303,5 +324,6 @@ export async function clearCollection() {
   } catch (error) {
     throw new StorageError('Could not clear your collection.', error);
   }
+  for (const listener of listeners) listener([]);
   return [];
 }

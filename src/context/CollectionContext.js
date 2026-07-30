@@ -8,6 +8,7 @@ import {
   loadCollection,
   removeFromCollection,
   setRecordStatus,
+  subscribeToCollection,
   updateManualRecord,
 } from '../storage/collection';
 
@@ -37,6 +38,16 @@ export function CollectionProvider({ children }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  /*
+   * Pick up writes that didn't come through this context — a restore replaces
+   * the whole store from useBackupSync, and the shelf has to follow it.
+   *
+   * The mutators below also call setRecords with the same array the store just
+   * persisted, so this fires with an identical reference for those and React
+   * skips the render.
+   */
+  useEffect(() => subscribeToCollection(setRecords), []);
 
   const add = useCallback(async (album, options) => {
     const { records: next, added } = await addToCollection(album, options);
