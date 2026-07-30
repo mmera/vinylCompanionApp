@@ -7,6 +7,8 @@
  * without it.
  */
 
+import { spacing } from '../theme';
+
 // Escaped rather than literal: the characters in this range are invisible in
 // a source file, which makes the regex impossible to read or safely edit.
 const COMBINING_MARKS = /[\u0300-\u036f]/g;
@@ -114,6 +116,25 @@ const HEADINGS = {
   album: (record) => initial(record.name),
   year: (record) => decade(record.year),
 };
+
+/**
+ * How wide a cover wants to be, and how many therefore fit.
+ *
+ * The grid was fixed at two columns, which is right for a portrait phone and
+ * wrong everywhere else — a landscape phone or a desktop window got two covers
+ * the size of dinner plates and no room left to scroll. Aiming for a tile width
+ * instead still lands on two in portrait and fills the shelf when there's room.
+ *
+ * Lives here rather than in the screen so it can be reasoned about with the
+ * rest of the grid maths, and clamped at both ends: fewer than two columns is
+ * what the list view is for, and more than six makes covers too small to read.
+ */
+export const TARGET_TILE = 170;
+
+export function gridColumns(width, { gutter = spacing.md, margin = spacing.lg } = {}) {
+  const usable = width - margin * 2;
+  return Math.max(2, Math.min(6, Math.round(usable / (TARGET_TILE + gutter))));
+}
 
 /** Group a flat sorted list into `[[a, b], [c]]` rows for a fixed-column grid. */
 function toRows(records, columns) {

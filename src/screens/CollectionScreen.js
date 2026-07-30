@@ -19,10 +19,21 @@ import { useCollectionPreferences } from '../hooks/useCollectionPreferences';
 import { usePreviewPlayer } from '../context/PreviewPlayerContext';
 import { useCollection } from '../context/CollectionContext';
 import { OWNED, WISHLIST } from '../storage/collection';
-import { SORT_MODES, buildSections } from '../utils/collectionView';
+import { SORT_MODES, buildSections, gridColumns } from '../utils/collectionView';
 import { colors, radius, spacing, type } from '../theme';
 
-const GRID_COLUMNS = 2;
+/**
+ * Landscape on a phone: abundant width, almost no height. The header that fits
+ * comfortably in portrait leaves a sliver of one row of covers, so it collapses
+ * onto fewer rows using the width it now has.
+ *
+ * 500 clears every iPhone landscape height (320–393) and no iPad one. The width
+ * floor matters as much: the collapsed header puts search, four sort pills and
+ * the view toggle on one row, which needs the room. Every iPhone in landscape
+ * is at least 667 wide.
+ */
+const SHORT_VIEWPORT = 500;
+const SHORT_MIN_WIDTH = 600;
 
 /**
  * Owned and wanted are one store filtered two ways, so the search box, sort
@@ -57,7 +68,7 @@ function titleSize(name) {
 /** The shelf: every record you own. */
 export function CollectionScreen({ navigation }) {
   const { records, isLoading, error, refresh } = useCollection();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   // Just `stop` — the full context value changes identity on every playback tick.
   const { stop: stopPreview } = usePreviewPlayer();
 
@@ -66,8 +77,10 @@ export function CollectionScreen({ navigation }) {
   const { view, sort, name, setView, setSort } = useCollectionPreferences();
 
   const isGrid = view === 'grid';
-  const columns = isGrid ? GRID_COLUMNS : 1;
+  const gridCount = useMemo(() => gridColumns(width), [width]);
+  const columns = isGrid ? gridCount : 1;
   const isWishlist = status === WISHLIST;
+  const isShort = height < SHORT_VIEWPORT && width >= SHORT_MIN_WIDTH;
 
   // Everything below counts and renders the active segment, not the whole
   // store — otherwise the count claims records the grid isn't showing.
@@ -77,8 +90,8 @@ export function CollectionScreen({ navigation }) {
   );
 
   const tileWidth = useMemo(
-    () => (width - spacing.lg * 2 - spacing.md * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
-    [width],
+    () => (width - spacing.lg * 2 - spacing.md * (gridCount - 1)) / gridCount,
+    [width, gridCount],
   );
 
   const { sections, total } = useMemo(
@@ -128,12 +141,17 @@ export function CollectionScreen({ navigation }) {
               onPress={() => openDetail(album)}
             />
           ))}
-          {/* Keeps a trailing odd record left-aligned instead of stretched. */}
-          {row.length < GRID_COLUMNS ? <View style={{ width: tileWidth }} /> : null}
+          {/*
+            Keeps a short trailing row left-aligned instead of stretched. One
+            spacer per missing column, since the grid is no longer always two.
+          */}
+          {Array.from({ length: gridCount - row.length }, (_, index) => (
+            <View key={`gap-${index}`} style={{ width: tileWidth }} />
+          ))}
         </View>
       );
     },
-    [isGrid, tileWidth, openDetail],
+    [isGrid, tileWidth, gridCount, openDetail],
   );
 
   const renderSectionHeader = useCallback(
@@ -154,6 +172,153 @@ export function CollectionScreen({ navigation }) {
     );
   }
 
+  /*
+   * The header's parts are held here rather than written inline, because a
+   * short viewport arranges the same pieces onto fewer rows. Plain values, not
+   * components — a component defined during render is a new type every time,
+   * which would remount the search box and lose its focus on each keystroke.
+   */
+
+  // Only worth showing once there is something in the other list — before that
+  // it is a control with one meaningful position.
+  const segments =
+    records.length > 0 ? (
+      <View style={styles.segments}>
+        {SEGMENTS.map((segment) => {
+          const active = segment.id === status;
+          return (
+            <Pressable
+              key={segment.id}
+              onPress={() => setStatus(segment.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={({ pressed }) => [
+                styles.segment,
+                active && styles.segmentActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                {segment.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    ) : null;
+
+  const actions = (
+    <View style={styles.headerActions}>
+      <Pressable
+        onPress={() => navigation.navigate('Search')}
+        accessibilityRole="button"
+        accessibilityLabel="Add a record"
+        hitSlop={12}
+        style={({ pressed }) => pressed && styles.pressed}
+      >
+        <Text style={styles.addLabel}>+ Add</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => navigation.navigate('Settings')}
+        accessibilityRole="button"
+        accessibilityLabel="Settings"
+        hitSlop={12}
+        style={({ pressed }) => pressed && styles.pressed}
+      >
+        <Text style={styles.settingsMark}>⚙</Text>
+      </Pressable>
+    </View>
+  );
+
+  const count = (
+    <Text style={styles.count}>{isFiltered ? `${total} of ${countLabel}` : countLabel}</Text>
+  );
+
+  const searchBar = (
+    <View style={styles.searchBar}>
+      <Text style={styles.searchMark}>⌕</Text>
+      <TextInput
+        value={query}
+        onChangeText={setQuery}
+        placeholder={isShort ? 'Search' : 'Search your collection'}
+        placeholderTextColor={colors.textTertiary}
+        style={styles.input}
+        autoCorrect={false}
+        autoCapitalize="none"
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+        accessibilityLabel="Search your collection"
+      />
+      {/* iOS draws its own clear button; everywhere else needs one. */}
+      {isFiltered && Platform.OS !== 'ios' ? (
+        <Pressable
+          onPress={() => setQuery('')}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+        >
+          <Text style={styles.clearMark}>✕</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+
+  const viewToggle = (
+    <View style={styles.viewToggle}>
+      {/*
+        ▦ against ▤ were near-indistinguishable — both a bordered square with
+        lines in it, differing only in whether the lines cross. ☰ shares no
+        silhouette with the grid at all.
+      */}
+      {[
+        { id: 'grid', mark: '▦', label: 'Grid view' },
+        { id: 'list', mark: '☰', label: 'List view' },
+      ].map((mode) => {
+        const active = view === mode.id;
+        return (
+          <Pressable
+            key={mode.id}
+            onPress={() => setView(mode.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={mode.label}
+            style={({ pressed }) => [
+              styles.viewButton,
+              active && styles.viewButtonActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.viewMark, active && styles.viewMarkActive]}>{mode.mark}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  const sortRow = (
+    <View style={styles.sortRow}>
+      {SORT_MODES.map((mode) => {
+        const active = mode.id === sort;
+        return (
+          <Pressable
+            key={mode.id}
+            onPress={() => setSort(mode.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={`Sort by ${mode.label}`}
+            style={({ pressed }) => [
+              styles.sortPill,
+              active && styles.sortPillActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.sortLabel, active && styles.sortLabelActive]}>{mode.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.fill} edges={['top']}>
       {/*
@@ -161,171 +326,67 @@ export function CollectionScreen({ navigation }) {
         a TextInput inside a virtualised list's header loses focus whenever the
         list re-renders, which is every keystroke.
       */}
-      <View style={styles.header}>
-        {/*
-          The title owns its row. The wishlist is a view of the same shelf, so
-          it keeps the name and the segmented control below says which half of
-          it you're looking at.
-        */}
-        <Text style={[styles.title, { fontSize: titleSize(shelfName) }]} numberOfLines={2}>
-          {shelfName}
-        </Text>
-
-        {/*
-          Segments and actions share the next row: the segmented control leaves
-          plenty of width beside it, and moving the actions off the title row is
-          what lets a name like "Marco's Collection" render at full size.
-          Only worth showing the segments once there is something in the other
-          list — before that it is a control with one meaningful position.
-        */}
-        <View style={styles.headerRow}>
-          {records.length > 0 ? (
-            <View style={styles.segments}>
-              {SEGMENTS.map((segment) => {
-                const active = segment.id === status;
-                return (
-                  <Pressable
-                    key={segment.id}
-                    onPress={() => setStatus(segment.id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    style={({ pressed }) => [
-                      styles.segment,
-                      active && styles.segmentActive,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                      {segment.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
-            // Keeps the actions right-aligned when there are no segments yet.
-            <View />
-          )}
-
-          <View style={styles.headerActions}>
-            <Pressable
-              onPress={() => navigation.navigate('Search')}
-              accessibilityRole="button"
-              accessibilityLabel="Add a record"
-              hitSlop={12}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Text style={styles.addLabel}>+ Add</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => navigation.navigate('Settings')}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-              hitSlop={12}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Text style={styles.settingsMark}>⚙</Text>
-            </Pressable>
+      <View style={[styles.header, isShort && styles.headerCompact]}>
+        {isShort ? (
+          /*
+            Landscape on a phone: the title shares a row instead of owning one.
+            It was given its own row because a name at 30pt did not fit beside
+            + Add on a 393pt-wide phone — but here there is twice that width and
+            no height to spare, which is the opposite problem.
+          */
+          <View style={styles.headerRowCompact}>
+            <Text style={[styles.title, styles.titleCompact]} numberOfLines={1}>
+              {shelfName}
+            </Text>
+            {count}
+            <View style={styles.spacer} />
+            {segments}
+            {actions}
           </View>
-        </View>
+        ) : (
+          <>
+            {/*
+              The title owns its row. The wishlist is a view of the same shelf,
+              so it keeps the name and the segmented control below says which
+              half of it you're looking at.
+            */}
+            <Text style={[styles.title, { fontSize: titleSize(shelfName) }]} numberOfLines={2}>
+              {shelfName}
+            </Text>
 
-        <Text style={styles.count}>
-          {isFiltered ? `${total} of ${countLabel}` : countLabel}
-        </Text>
+            {/*
+              Segments and actions share the next row: the segmented control
+              leaves plenty of width beside it, and moving the actions off the
+              title row is what lets a name like "Marco's Collection" render at
+              full size.
+            */}
+            <View style={styles.headerRow}>
+              {/* An empty view keeps the actions right-aligned with no segments. */}
+              {segments ?? <View />}
+              {actions}
+            </View>
+
+            {count}
+          </>
+        )}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {showControls ? (
-          <View style={styles.controls}>
+          <View style={[styles.controls, isShort && styles.controlsCompact]}>
             {/*
               Search and the view toggle share a row: four sort pills plus a
               toggle overflows a narrow phone, and search is the control that
-              wants the width.
+              wants the width. On a short viewport the pills join them, because
+              a row saved is a row of covers gained and the width is there.
             */}
             <View style={styles.searchRow}>
-              <View style={styles.searchBar}>
-                <Text style={styles.searchMark}>⌕</Text>
-                <TextInput
-                  value={query}
-                  onChangeText={setQuery}
-                  placeholder="Search your collection"
-                  placeholderTextColor={colors.textTertiary}
-                  style={styles.input}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  returnKeyType="search"
-                  clearButtonMode="while-editing"
-                  accessibilityLabel="Search your collection"
-                />
-                {/* iOS draws its own clear button; everywhere else needs one. */}
-                {isFiltered && Platform.OS !== 'ios' ? (
-                  <Pressable
-                    onPress={() => setQuery('')}
-                    hitSlop={10}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear search"
-                  >
-                    <Text style={styles.clearMark}>✕</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-
-              <View style={styles.viewToggle}>
-                {/*
-                  ▦ against ▤ were near-indistinguishable — both a bordered
-                  square with lines in it, differing only in whether the lines
-                  cross. ☰ shares no silhouette with the grid at all.
-                */}
-                {[
-                  { id: 'grid', mark: '▦', label: 'Grid view' },
-                  { id: 'list', mark: '☰', label: 'List view' },
-                ].map((mode) => {
-                  const active = view === mode.id;
-                  return (
-                    <Pressable
-                      key={mode.id}
-                      onPress={() => setView(mode.id)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
-                      accessibilityLabel={mode.label}
-                      style={({ pressed }) => [
-                        styles.viewButton,
-                        active && styles.viewButtonActive,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={[styles.viewMark, active && styles.viewMarkActive]}>
-                        {mode.mark}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {searchBar}
+              {isShort ? sortRow : null}
+              {viewToggle}
             </View>
 
-            <View style={styles.sortRow}>
-              {SORT_MODES.map((mode) => {
-                const active = mode.id === sort;
-                return (
-                  <Pressable
-                    key={mode.id}
-                    onPress={() => setSort(mode.id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    accessibilityLabel={`Sort by ${mode.label}`}
-                    style={({ pressed }) => [
-                      styles.sortPill,
-                      active && styles.sortPillActive,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.sortLabel, active && styles.sortLabelActive]}>
-                      {mode.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            {isShort ? null : sortRow}
           </View>
         ) : null}
       </View>
@@ -408,16 +469,36 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     gap: spacing.xs,
   },
+  headerCompact: {
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
+  // One row holding the title, count, segments and actions. Centre-aligned
+  // rather than baseline: baselines across nested views resolve differently on
+  // React Native Web than on iOS, and the row mixes text with bordered controls.
+  headerRowCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  spacer: {
+    flex: 1,
+  },
   title: {
     ...type.display,
     // fontSize comes from titleSize(); lineHeight must scale with it or a
     // two-line name overlaps itself, so leave it unset.
+  },
+  titleCompact: {
+    fontSize: 20,
+    // Yields to the controls rather than pushing them off the row.
+    flexShrink: 1,
   },
   headerActions: {
     flexDirection: 'row',
@@ -462,6 +543,9 @@ const styles = StyleSheet.create({
   controls: {
     gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  controlsCompact: {
+    marginTop: spacing.xs,
   },
   searchRow: {
     flexDirection: 'row',
