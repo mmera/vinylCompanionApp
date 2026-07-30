@@ -100,7 +100,9 @@ const HEAD_TAGS = `
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Crate" />
-    <link rel="apple-touch-icon" href="${BASE_DIR}icons/icon-1024.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="${BASE_DIR}icons/icon-180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="${BASE_DIR}icons/icon-167.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="${BASE_DIR}icons/icon-152.png" />
 `;
 
 const SW_REGISTRATION = `
@@ -150,7 +152,21 @@ if (existsSync(manifestPath)) {
 }
 
 // ── 2. Confirm the static assets Pages needs actually made it across ────────
-const required = ['manifest.webmanifest', 'sw.js', '.nojekyll', 'icons/icon-1024.png'];
+// Every icon the injected tags and the manifest reference. A missing one is a
+// silently wrong home screen, so it fails the build rather than the install.
+const required = [
+  'manifest.webmanifest',
+  'sw.js',
+  '.nojekyll',
+  'icons/icon-1024.png',
+  'icons/icon-512.png',
+  'icons/icon-192.png',
+  'icons/icon-180.png',
+  'icons/icon-167.png',
+  'icons/icon-152.png',
+  'icons/icon-maskable-512.png',
+  'icons/icon-maskable-192.png',
+];
 let missing = false;
 for (const file of required) {
   if (existsSync(path.join(dist, file))) {

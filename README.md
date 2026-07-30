@@ -163,7 +163,25 @@ Actions tab.
 The site lands at `https://<user>.github.io/vinylCompanionApp/`.
 
 To install it: open that URL, then **Share → Add to Home Screen** on iOS, or the install
-icon in the address bar on desktop Chrome/Edge.
+icon in the address bar on desktop Chrome/Edge. The Home Screen tile is a vinyl record —
+if you installed Crate before that existed, delete the old tile and add it again, because
+iOS caches the icon per install and won't refresh it on its own.
+
+### The icon
+
+There is no image in version control that a design tool made. `scripts/make-icons.mjs`
+*draws* the record — a record is radially symmetric, so every pixel is a function of its
+distance from the centre — and writes the PNGs directly with `node:zlib`, no dependency
+involved. Change a number, re-run, see the difference:
+
+```bash
+npm run icons
+```
+
+It emits the Apple touch icons (180/167/152), the manifest set (192/512/1024), separate
+`maskable` renders inset for Android's circular crop, and `assets/favicon.png`, which
+Expo turns into the tab's `favicon.ico`. Output is RGB with no alpha on purpose: iOS
+renders a transparent touch icon as a black box.
 
 ### Building it yourself
 
