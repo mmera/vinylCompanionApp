@@ -40,6 +40,8 @@ const EMPTY = {
   // Not a credential: a fallback for the Spotify client ID when the build was
   // made without one. See `config/spotifyConfig.js`.
   spotifyClientId: '',
+  // GitHub PAT, `gist` scope only — see `services/backup.js`.
+  githubToken: '',
 };
 
 let cache = { ...EMPTY, ...ENV_DEFAULTS };
@@ -62,6 +64,7 @@ export async function hydrateCredentials() {
         claudeApiKey: clean(saved.claudeApiKey) || ENV_DEFAULTS.claudeApiKey,
         claudeModel: clean(saved.claudeModel) || ENV_DEFAULTS.claudeModel,
         spotifyClientId: clean(saved.spotifyClientId),
+        githubToken: clean(saved.githubToken),
       };
     }
   } catch {
@@ -95,6 +98,7 @@ export async function saveCredentials(next) {
     claudeApiKey: merge('claudeApiKey'),
     claudeModel: merge('claudeModel'),
     spotifyClientId: merge('spotifyClientId'),
+    githubToken: merge('githubToken'),
   };
   hydrated = true;
 
@@ -110,13 +114,20 @@ export async function saveCredentials(next) {
 }
 
 /**
- * Removes the keys, not the Spotify client ID — that is a public identifier
- * standing in for a missing build-time value, and dropping it here would sign
- * the user out of Spotify as a side effect of clearing their Claude key. The
- * Spotify section has its own control for forgetting it.
+ * Removes the Claude key, and only that.
+ *
+ * The Spotify client ID stays because it is a public identifier standing in for
+ * a missing build-time value. The GitHub token stays for a sharper reason:
+ * clearing an API key should not silently switch off your backups, which is
+ * the one thing protecting the collection. Both have their own forget control
+ * in Settings, where the consequence is legible.
  */
 export async function clearCredentials() {
-  cache = { ...EMPTY, spotifyClientId: cache.spotifyClientId };
+  cache = {
+    ...EMPTY,
+    spotifyClientId: cache.spotifyClientId,
+    githubToken: cache.githubToken,
+  };
   hydrated = true;
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);

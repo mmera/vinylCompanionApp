@@ -271,6 +271,32 @@ export async function isInCollection(albumId) {
   return records.some((record) => record.id === albumId);
 }
 
+/**
+ * Overwrite the whole collection — restoring from a backup.
+ *
+ * Deliberately a wholesale replace rather than a merge: a backup represents a
+ * known-good state at a point in time, and silently unioning it with whatever
+ * is on the device would produce a third state that never existed. The caller
+ * decides whether replacing is appropriate; `useBackupSync` only does it when
+ * local is empty.
+ *
+ * Runs the same normalisation as `loadCollection`, so a hand-edited or older
+ * backup gets the same defaulting and cannot introduce records without an id.
+ */
+export async function replaceCollection(records) {
+  if (!Array.isArray(records)) {
+    throw new StorageError('That backup does not contain a collection.');
+  }
+
+  const next = records
+    .filter((record) => record?.id)
+    .map((record) => (isStatus(record.status) ? record : { ...record, status: OWNED }))
+    .sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
+
+  await persist(next);
+  return next;
+}
+
 export async function clearCollection() {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);

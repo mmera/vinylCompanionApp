@@ -4,7 +4,8 @@ A vinyl record companion. Point the camera at a record sleeve and it tells you w
 you're holding; keep the ones you own in a local collection.
 
 Runs as an iOS app via Expo Go, and as an installable PWA on GitHub Pages.
-Personal use only — no accounts, no backend, no analytics. Everything lives on the device.
+Personal use only — no accounts, no backend, no analytics. Everything lives on the device,
+with the collection mirrored to a private GitHub Gist so it can survive the device.
 
 - **Scanner** — a live camera view that analyses what it sees every ~1.8s and identifies
   the album cover. No shutter button.
@@ -72,6 +73,35 @@ first launch — the collection, search, manual entry and Spotify links all work
 Get one at [platform.claude.com](https://platform.claude.com) → Settings → API keys. It
 needs credit: scanning is a paid call, and the scanner fires roughly every 1.8s while
 the Scanner tab is open.
+
+### Backup
+
+Browser storage is not a safe place for the only copy of anything. Safari clears
+script-writable storage after about a week without a visit unless persistence has been
+granted, and no grant survives a reset, a new phone, or "clear website data". A scan can be
+redone and a key re-pasted; a hand-built collection cannot.
+
+So the collection is mirrored to a **private GitHub Gist** whenever it changes. No server,
+free, and *versioned* — recovery isn't limited to whatever the last write contained. It is
+also the export path: a gist is a JSON file at a URL, readable and downloadable from
+github.com with no app involved.
+
+Add a token in Settings — github.com → Settings → Developer settings → Tokens, with the
+**`gist` scope only**, so it can touch gists and nothing else.
+
+Three rules worth knowing:
+
+- **The backup is found by filename** (`crate-backup.json`), never by a stored gist ID. An
+  ID would live in the same storage the backup exists to survive; the token alone is enough
+  to find it again.
+- **Restore is automatic only into an empty collection.** If records are already on the
+  device, a backup could be older than they are, so replacing them is an explicit action in
+  Settings. Otherwise the safety net becomes the thing that loses data.
+- **Credentials are never backed up** — not the Claude key, not the Spotify session. A gist
+  is a URL you can open in a browser. The test suite asserts this rather than trusting it.
+
+Clearing your Claude key deliberately leaves the backup token alone: switching off your
+backups shouldn't be a side effect of removing an API key.
 
 ### Keys are stored per origin
 
@@ -262,6 +292,10 @@ your app.
 | Silent switch | Flip the ringer to silent — previews still audible (pre-cutoff apps only) |
 | Search the shelf | Search, sort and the grid/list toggle appear as soon as there's a record; `fleet rum` finds *Rumours* |
 | Grid / list toggle | Switches density; the choice survives a reload |
+| Backup | Add a record, wait ~5s, confirm the gist gains a revision |
+| Restore | Clear site data, reload, confirm the collection returns by itself |
+| No clobbering | With records already present, confirm it does **not** auto-restore |
+| Bad token | Paste a junk token; Settings says so and the app keeps working |
 | Wishlist | Add from scan, search and by hand; a wishlisted record never reads "In your collection" |
 | Buying a record | "Got it — add to collection" moves it across; it does not duplicate |
 | Old records | Anything saved before the wishlist existed still shows, as owned |

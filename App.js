@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { BackupProvider } from './src/context/BackupContext';
 import { CollectionProvider } from './src/context/CollectionContext';
 import { CredentialsProvider, useCredentials } from './src/context/CredentialsContext';
 import { PreviewPlayerProvider } from './src/context/PreviewPlayerContext';
@@ -46,9 +47,13 @@ export default function App() {
       <CredentialsProvider>
         <SpotifyAuthProvider>
           <CollectionProvider>
-            <PreviewPlayerProvider>
-              <Shell />
-            </PreviewPlayerProvider>
+            {/* Inside the collection, since it mirrors it; above the UI, so
+                backups keep running whether or not Settings is open. */}
+            <BackupProvider>
+              <PreviewPlayerProvider>
+                <Shell />
+              </PreviewPlayerProvider>
+            </BackupProvider>
           </CollectionProvider>
         </SpotifyAuthProvider>
       </CredentialsProvider>

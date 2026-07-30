@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
+import { useBackup } from '../context/BackupContext';
+import { BackupState } from '../hooks/useBackupSync';
 import { useCollectionPreferences } from '../hooks/useCollectionPreferences';
 import { useCredentials } from '../context/CredentialsContext';
 import { useSpotifyAuth } from '../context/SpotifyAuthContext';
@@ -33,9 +35,10 @@ export function SettingsScreen({ navigation, route }) {
   const { credentials, save, clear, hasClaude, persistence, origin } = useCredentials();
   const spotify = useSpotifyAuth();
   const { name, setName } = useCollectionPreferences();
+  const backup = useBackup();
   const isOnboarding = route?.params?.onboarding ?? false;
 
-  const [form, setForm] = useState({ claudeApiKey: '', claudeModel: '' });
+  const [form, setForm] = useState({ claudeApiKey: '', claudeModel: '', githubToken: '' });
   const [status, setStatus] = useState(null); // { kind, message }
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -44,6 +47,7 @@ export function SettingsScreen({ navigation, route }) {
     setForm({
       claudeApiKey: credentials.claudeApiKey,
       claudeModel: credentials.claudeModel,
+      githubToken: credentials.githubToken,
     });
   }, [credentials]);
 
@@ -217,6 +221,13 @@ export function SettingsScreen({ navigation, route }) {
             />
           </View>
 
+          <BackupSection
+            backup={backup}
+            token={form.githubToken}
+            onChangeToken={update('githubToken')}
+            onSaveToken={() => save({ githubToken: form.githubToken })}
+          />
+
           <StorageNote isConfigured={hasClaude} persistence={persistence} origin={origin} />
 
           {hasClaude && !isOnboarding ? (
@@ -357,6 +368,94 @@ function SpotifySection({ spotify, onSaveClientId, onForgetClientId }) {
           </Text>
         </Pressable>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Backup to a private Gist.
+ *
+ * The collection is the one thing here that cannot be regenerated — a scan can
+ * be redone, a key re-pasted, but a hand-built shelf cannot. Browser storage is
+ * not a safe place for the only copy of it, so this mirrors it somewhere that
+ * survives clearing site data, a new phone, or Safari's weekly sweep.
+ */
+function BackupSection({ backup, token, onChangeToken, onSaveToken }) {
+  const [isWorking, setIsWorking] = useState(false);
+  const [note, setNote] = useState(null);
+
+  const run = useCallback(async (action, done) => {
+    setIsWorking(true);
+    setNote(null);
+    try {
+      await action();
+      setNote(done);
+    } catch (error) {
+      setNote(error.message ?? 'That did not work.');
+    } finally {
+      setIsWorking(false);
+    }
+  }, []);
+
+  const status = !backup.hasToken
+    ? 'Not set up'
+    : backup.state === BackupState.SAVING
+      ? 'Backing up…'
+      : backup.state === BackupState.ERROR
+        ? 'Failed'
+        : backup.savedAt
+          ? `Backed up ${new Date(backup.savedAt).toLocaleString()}`
+          : 'Waiting for a change';
+
+  return (
+    <View style={styles.spotifySection}>
+      <View style={styles.fieldHeader}>
+        <Text style={styles.fieldLabel}>Backup</Text>
+        <Text style={[styles.spotifyState, backup.state === BackupState.ERROR && styles.spotifyStateWarn]}>
+          {status}
+        </Text>
+      </View>
+
+      <Text style={styles.storageNoteText}>
+        Your collection is copied to a private GitHub Gist whenever it changes, so
+        clearing site data or changing phone doesn&rsquo;t lose it. Only the collection and
+        its settings are stored — never your Claude key or Spotify session.
+      </Text>
+
+      <Field
+        label="GitHub token"
+        value={token}
+        onChangeText={onChangeToken}
+        placeholder="ghp_..."
+        secure
+        help="github.com → Settings → Developer settings → Tokens. Needs the “gist” scope only."
+        onHelpPress={() => Linking.openURL('https://github.com/settings/tokens')}
+      />
+
+      <Button label="Save token" onPress={onSaveToken} disabled={!token?.trim()} />
+
+      {backup.hasToken ? (
+        <>
+          <Button
+            label="Back up now"
+            onPress={() => run(backup.backUpNow, 'Backed up.')}
+            disabled={isWorking}
+            loading={isWorking}
+          />
+          {/*
+            Restoring replaces what is on the device, so it is never automatic
+            when there is already a collection here — only ever this button.
+          */}
+          <Button
+            label="Restore from backup"
+            onPress={() => run(backup.restoreNow, 'Restored from backup.')}
+            disabled={isWorking}
+          />
+        </>
+      ) : null}
+
+      {note ? <Text style={styles.storageNoteText}>{note}</Text> : null}
+      {backup.error ? <Text style={styles.spotifyError}>{backup.error}</Text> : null}
     </View>
   );
 }
