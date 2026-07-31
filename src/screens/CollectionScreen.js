@@ -246,11 +246,15 @@ export function CollectionScreen({ navigation }) {
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
-        clearButtonMode="while-editing"
+        /*
+          Ours on every platform, matching the add screen. iOS draws its own
+          only while the field has focus, and react-native-web ignores
+          clearButtonMode entirely — so the PWA had no way to clear the filter.
+        */
+        clearButtonMode="never"
         accessibilityLabel="Search your collection"
       />
-      {/* iOS draws its own clear button; everywhere else needs one. */}
-      {isFiltered && Platform.OS !== 'ios' ? (
+      {isFiltered ? (
         <Pressable
           onPress={() => setQuery('')}
           hitSlop={10}

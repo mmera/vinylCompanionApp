@@ -28,9 +28,13 @@ export function SearchScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [addingId, setAddingId] = useState(null);
+  // The last record added, so it can be confirmed and taken back after the
+  // search that found it has been cleared away.
+  const [justAdded, setJustAdded] = useState(null);
 
   const collection = useCollection();
   const spotify = useSpotifyAuth();
+  const inputRef = useRef(null);
 
   /*
    * Scanning is the fastest way to add a record and the reason the app exists,
@@ -60,6 +64,10 @@ export function SearchScreen({ navigation }) {
       return undefined;
     }
 
+    // Typing the next record is the acknowledgement — the confirmation for the
+    // last one has done its job by then.
+    setJustAdded(null);
+
     const requestId = ++requestIdRef.current;
     setIsSearching(true);
 
@@ -84,20 +92,56 @@ export function SearchScreen({ navigation }) {
     return () => clearTimeout(timer);
   }, [query]);
 
+  const clearSearch = useCallback(() => {
+    setQuery('');
+    // Straight back to typing — on the add screen an empty box with no cursor
+    // in it is one more tap for no reason.
+    inputRef.current?.focus();
+  }, []);
+
   const handleAdd = useCallback(
     async (album, status) => {
+      // Captured before the write, so Undo can put the record back the way it
+      // was: adding an owned copy of a wishlisted record *moves* it, and
+      // removing it outright would not be the reverse of that.
+      const previous = collection.statusOf(album.id);
+
       setAddingId(`${album.id}:${status}`);
       setError(null);
       try {
         await collection.add(album, { source: 'search', status });
+        /*
+         * Cataloguing a shelf is dozens of records one after another, and the
+         * search that found this one is only in the way of the next. So the
+         * query clears itself and the field keeps focus — the next record is a
+         * matter of typing, not of finding the X first.
+         *
+         * What was added is confirmed below rather than left implicit, since
+         * clearing the results also clears the evidence that it worked.
+         */
+        setJustAdded({ album, status, previous });
+        clearSearch();
       } catch (addError) {
         setError(addError.message ?? 'Could not save this record.');
       } finally {
         setAddingId(null);
       }
     },
-    [collection],
+    [collection, clearSearch],
   );
+
+  const undoAdd = useCallback(async () => {
+    if (!justAdded) return;
+    const { album, previous } = justAdded;
+    try {
+      // Back to wishlisted if that is where it came from, gone if it is new.
+      if (previous) await collection.setStatus(album.id, previous);
+      else await collection.remove(album.id);
+      setJustAdded(null);
+    } catch (undoError) {
+      setError(undoError.message ?? 'Could not undo that.');
+    }
+  }, [collection, justAdded]);
 
   const renderItem = useCallback(
     ({ item }) => {
@@ -198,6 +242,7 @@ export function SearchScreen({ navigation }) {
     <SafeAreaView style={styles.fill} edges={['bottom']}>
       <View style={styles.searchBar}>
         <TextInput
+          ref={inputRef}
           value={query}
           onChangeText={setQuery}
           placeholder="Search albums or artists"
@@ -206,10 +251,28 @@ export function SearchScreen({ navigation }) {
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
-          clearButtonMode="while-editing"
+          /*
+            Ours, not the platform's. iOS only draws its clear button while the
+            field has focus, and react-native-web ignores clearButtonMode
+            altogether — so in the PWA there was no way to clear the box at all,
+            and on iOS none at the one moment it is wanted: just after tapping +,
+            when the search that found the last record is in the way of the next.
+          */
+          clearButtonMode="never"
           accessibilityLabel="Search Spotify for an album"
         />
         {isSearching ? <ActivityIndicator size="small" color={colors.textTertiary} /> : null}
+        {query ? (
+          <Pressable
+            onPress={clearSearch}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            hitSlop={10}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.clearMark}>✕</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={scanInstead}
           accessibilityRole="button"
@@ -223,6 +286,24 @@ export function SearchScreen({ navigation }) {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      {justAdded ? (
+        <View style={styles.added}>
+          <Text style={styles.addedText} numberOfLines={1}>
+            Added <Text style={styles.addedName}>{justAdded.album.name}</Text> to your{' '}
+            {justAdded.status === WISHLIST ? 'wishlist' : 'collection'}
+          </Text>
+          <Pressable
+            onPress={undoAdd}
+            accessibilityRole="button"
+            accessibilityLabel={`Undo adding ${justAdded.album.name}`}
+            hitSlop={8}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.undo}>Undo</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <FlatList
         data={results}
         keyExtractor={(item) => item.id}
@@ -230,7 +311,10 @@ export function SearchScreen({ navigation }) {
         contentContainerStyle={[styles.list, results.length === 0 && styles.listEmpty]}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
-          isSearching ? null : hasSearched ? (
+          // Nothing after an add either: the confirmation above is the feedback,
+          // and the full "Find a record" panel flashing between every record
+          // would make a cataloguing run feel like starting over each time.
+          isSearching || justAdded ? null : hasSearched ? (
             <EmptyState
               mark="○"
               title="Nothing found"
@@ -294,9 +378,40 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
   },
+  clearMark: {
+    fontSize: 15,
+    color: colors.textTertiary,
+  },
   scanMark: {
     fontSize: 20,
     color: colors.textSecondary,
+  },
+  added: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  addedText: {
+    ...type.caption,
+    flexShrink: 1,
+  },
+  addedName: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  undo: {
+    ...type.caption,
+    color: colors.text,
+    fontWeight: '600',
   },
   list: {
     paddingHorizontal: spacing.lg,

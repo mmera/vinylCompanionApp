@@ -342,6 +342,9 @@ your app.
 | A long name | "Marco's Collection" renders at full size; longer names step down, then wrap to two lines rather than ellipsising |
 | Sort by artist | Sticky A–Z headers; **The** Beatles under B, not T |
 | Add by hand | Search something Spotify lacks → "Add by hand" → appears with a ✎ badge |
+| Cataloguing a run | Add from search → box clears, cursor stays put, "Added … — Undo" confirms; type the next record without touching anything else |
+| Undo a move | Wishlist a record, then add it as owned, then Undo — it returns to the wishlist rather than being deleted |
+| Clear the search | The ✕ is there on both search bars, focused or not, on iOS and in the PWA |
 | Edit a manual record | Open it, change the year, go back — the detail screen reflects the edit |
 | Remove | Confirm dialog appears **and the record actually goes** (this was a no-op on web) |
 | Deep link | "Open in Spotify" opens the app if installed, else the web player; absent on manual records |
